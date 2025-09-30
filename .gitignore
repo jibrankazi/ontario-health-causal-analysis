@@ -1,0 +1,18 @@
+# Byte-compiled / packages
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual env
+.venv/
+
+# OS
+.DS_Store
+
+# Data / results
+data/*
+!data/.gitkeep
+results/*
+!results/.gitkeep
+figures/*
+!figures/.gitkeep
