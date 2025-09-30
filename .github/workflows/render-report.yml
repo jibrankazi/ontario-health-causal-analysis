@@ -22,6 +22,15 @@ jobs:
           pip install -r requirements.txt
           pip install jupyter nbconvert
 
+      - name: Create dummy data for CI
+        run: |
+          mkdir -p data
+          echo "week,region,incidence,treated" > data/ontario_cases.csv
+          echo "2021-01-01,A,10,1" >> data/ontario_cases.csv
+          echo "2021-12-01,A,8,1" >> data/ontario_cases.csv
+          echo "2021-01-01,B,11,0" >> data/ontario_cases.csv
+          echo "2021-12-01,B,9,0" >> data/ontario_cases.csv
+          
       - name: Run Python pipeline to generate figures
         run: |
           python run_analysis.py
