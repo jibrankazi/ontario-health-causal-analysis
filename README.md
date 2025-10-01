@@ -50,3 +50,35 @@ Please cite using the **CITATION.cff** file. A DOI can be added later via Zenodo
 
 ## License
 Released under the MIT License. See `LICENSE`.
+
+### Reproduction (script)
+```bash
+python -m venv .venv && source .venv/bin/activate   # Windows: .\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python run_analysis.py
+# Artifacts:
+# - results/results.json (DiD/PSM metrics, pretrend p-value)
+# - figures/fig1_event_trends.png
+# - figures/fig1_event_study.png
+# - results/psm_balance_prematch.csv (if covariates provided)
+# - results/psm_balance_postmatch.csv (if covariates provided)
+
+bash: intervention_date:: command not found
+
+#!/usr/bin/env bash
+set -euo pipefail
+cd ~/OneDrive/Desktop/ontario-health-causal-analysis
+
+# Ensure clean state
+git pull --rebase origin main
+
+# 1. Fix config.yaml
+cat > config.yaml <<'EOF'
+data_path: "data/ontario_cases.csv"
+date_col: "week"
+unit_col: "region"
+outcome_col: "incidence"
+treat_col: "treated"
+intervention_date: "2021-02-01"
+covariates: []
+freq: "W-MON"
