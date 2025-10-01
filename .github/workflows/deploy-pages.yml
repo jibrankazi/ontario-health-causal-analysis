@@ -42,16 +42,12 @@ jobs:
 HTML
           fi
 
-      # If your render workflow dropped reports into results/, copy them to docs/
+      # Copy generated report files from results/ to docs/ for deployment
       - name: Copy latest report to docs (if present)
         run: |
           mkdir -p docs
-          # This line copies your finished report.html and names it report.html for the link above.
           [ -f results/report.html ] && cp results/report.html docs/report.html || true
           [ -f results/report.pdf ]  && cp results/report.pdf  docs/report.pdf  || true
-          
-      # The step below creates the index.html from report.html if the docs/index.html step fails
-      [ -f docs/report.html ] && cp docs/report.html docs/index.html || true
 
       - name: Upload artifact for Pages
         uses: actions/upload-pages-artifact@v3
