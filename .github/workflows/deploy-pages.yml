@@ -25,21 +25,20 @@ jobs:
           if [ ! -f docs/index.html ]; then
             cat > docs/index.html <<'HTML'
 <!doctype html>
-<meta charset="utf-8">
-<title>Ontario Health Causal Analysis</title>
-<h1>Ontario Health Causal Analysis</h1>
-<p>This site publishes the latest report and figures from CI.</p>
-<ul>
-  <li><a href="report.html">Report (HTML)</a></li>
-  <li><a href="report.pdf">Report (PDF)</a></li>
-</ul>
-<h2>Figures</h2>
-<ul>
-  <li><a href="../figures/fig1_event_trends.png">fig1_event_trends.png</a></li>
-  <li><a href="../figures/fig1_event_study.png">fig1_event_study.png</a></li>
-  <li><a href="../figures/fig2_smd_prematch.png">fig2_smd_prematch.png</a></li>
-  <li><a href="../figures/fig3_causalimpact.png">fig3_causalimpact.png</a></li>
-</ul>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Ontario Health Causal Analysis</title>
+</head>
+<body>
+    <h1>Ontario Health Causal Analysis</h1>
+    <p>This site publishes the latest report and figures from CI.</p>
+    <ul>
+        <li><a href="report.html">Report (HTML)</a></li>
+        <li><a href="report.pdf">Report (PDF)</a></li>
+    </ul>
+</body>
+</html>
 HTML
           fi
 
@@ -47,6 +46,7 @@ HTML
       - name: Copy latest report to docs (if present)
         run: |
           mkdir -p docs
+          # This line copies your finished report.html and names it report.html for the link above.
           [ -f results/report.html ] && cp results/report.html docs/report.html || true
           [ -f results/report.pdf ]  && cp results/report.pdf  docs/report.pdf  || true
 
