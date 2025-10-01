@@ -1,27 +1,14 @@
-name: Render report
-
-on:
-  push:
-    branches: [ "main" ]
-  workflow_dispatch:
-
-jobs:
-  render:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-      
+# ... (lines above) ...
       - name: Install nbconvert & dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install jupyter nbconvert
 
+<<<<<<< HEAD
+=======
+      # <<< ADD THIS NEW STEP >>>
+>>>>>>> 3f63e6c0e8f5fa5412897250722819d8695c2607
       - name: Create dummy data for CI
         run: |
           mkdir -p data
@@ -30,18 +17,12 @@ jobs:
           echo "2021-12-01,A,8,1" >> data/ontario_cases.csv
           echo "2021-01-01,B,11,0" >> data/ontario_cases.csv
           echo "2021-12-01,B,9,0" >> data/ontario_cases.csv
+<<<<<<< HEAD
           
+=======
+
+>>>>>>> 3f63e6c0e8f5fa5412897250722819d8695c2607
       - name: Run Python pipeline to generate figures
         run: |
           python run_analysis.py
-          
-      - name: Render notebook to HTML
-        run: |
-          mkdir -p results/docs
-          jupyter nbconvert --to html analysis.ipynb --output-dir results/docs
-          
-      - name: Upload report artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: html-report
-          path: results/docs/
+# ... (lines below) ...
