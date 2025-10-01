@@ -18,18 +18,24 @@ jobs:
           R -e "install.packages(c('rmarkdown','tidyverse','zoo','lubridate'), repos='https://cloud.r-project.org')"
           R -e "if(!requireNamespace('CausalImpact', quietly=TRUE)) install.packages('CausalImpact', repos='https://cloud.r-project.org')"
           R -e "if(!requireNamespace('bsts', quietly=TRUE)) install.packages('bsts', repos='https://cloud.r-project.org')"
+          
       - name: Render Rmd → PDF & HTML
         run: |
           mkdir -p results
-          R -e "rmarkdown::render('docs/report.Rmd', output_format='pdf_document',  output_dir='results')"
+          # NOTE: Assuming report.Rmd exists in the 'docs' folder
+          R -e "rmarkdown::render('docs/report.Rmd', output_format='pdf_document', output_dir='results')"
           R -e "rmarkdown::render('docs/report.Rmd', output_format='html_document', output_dir='results')"
+          
+      # This step copies the generated report artifacts to the 'docs' folder
+      # for potential use by GitHub Pages if you ever switch back to the 'docs' branch/folder source.
+      # It also ensures the files are in the expected location for the artifact upload.
+      - name: Copy report to docs (Optional)
+        run: |
+          mkdir -p docs
+          cp results/report.html docs/ || true
+          cp results/report.pdf docs/ || true
+          
       - name: Upload report artifacts
-
-- name: Copy report to docs
-  run: |
-    mkdir -p docs
-    cp results/report.html docs/ || true
-    cp results/report.pdf docs/ || true
         uses: actions/upload-artifact@v4
         with:
           name: report
