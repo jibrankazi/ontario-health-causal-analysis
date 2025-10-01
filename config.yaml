@@ -1,11 +1,8 @@
-# === DATA MAPPING (EDIT THESE TO MATCH YOUR CSV) ===
-data_path: data/ontario_cases.csv       # point to the cleaned COVID‑19 cases CSV
-date_col: week                          # weekly period column
-unit_col: region                        # public health unit identifier
-outcome_col: incidence                  # weekly mean of active cases
-treat_col: treated                      # 1=treated unit(s), 0=control
-covariates: []                          # optional covariates (none in this dataset)
-
-# === STUDY DESIGN ===
-intervention_date: 2021-10-15             # set to your policy start date (YYYY-MM-DD)
-freq: W                                   # 'W' weekly, 'D' daily, etc.
+data_path: "data/ontario_cases.csv"
+date_col: "week"
+unit_col: "region"
+outcome_col: "incidence"
+treat_col: "treated"
+intervention_date: "2021-02-01"  # <-- present in your file
+covariates: []
+freq: "W-MON"
