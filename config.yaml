@@ -1,8 +1,14 @@
+# overwrite config.yaml with the correct columns/date
+cat > config.yaml << 'EOF'
 data_path: "data/ontario_cases.csv"
 date_col: "week"
 unit_col: "region"
 outcome_col: "incidence"
 treat_col: "treated"
-intervention_date: "2021-02-01"  # <-- present in your file
+intervention_date: "2021-02-01"   # this date exists in your CSV
 covariates: []
 freq: "W-MON"
+EOF
+
+git add config.yaml
+git commit -m "fix(config): align intervention_date with dataset (2021-02-01)"
