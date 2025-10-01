@@ -1,19 +1,26 @@
-# Byte-compiled / packages
 __pycache__/
-*.py[cod]
-*.egg-info/
+*.pyc
+.Rhistory
+.Rproj.user
 
-# Virtual env
-.venv/
-
-# OS
-.DS_Store
-
-# Data / results
 data/*
-!data/.gitkeep
+!data/ontario_cases.csv
+
 results/*
-!results/.gitkeep
+!results/**/*.csv
+!results/**/*.json
+!results/**/*.png
+!results/**/*.pdf
+!results/.keep
+
 figures/*
-!figures/.gitkeep
+!figures/**/*.png
+!figures/**/*.jpg
+!figures/**/*.svg
+!figures/**/*.pdf
+
+.venv/
+.env
+.DS_Store
+Thumbs.db
 /NUL
