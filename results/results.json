@@ -1,0 +1,7 @@
+{
+  "did_att": -108.61279573753846,
+  "did_se": 105.79618064338003,
+  "did_p": 0.30459800448798546,
+  "psm_att": -37.43605654761903,
+  "causalimpact": "Posterior Inference {Causal Impact}\n                          Average            Cumulative\nActual                    300.47             28845.37\nPrediction (s.d.)         161.15 (6.64)      15470.04 (637.13)\n95% CI                    [148.0, 174.02]    [14207.95, 16705.47]\n\nAbsolute effect (s.d.)    139.33 (6.64)      13375.33 (637.13)\n95% CI                    [126.46, 152.47]   [12139.9, 14637.41]\n\nRelative effect (s.d.)    86.46% (4.12%)     86.46% (4.12%)\n95% CI                    [78.47%, 94.62%]   [78.47%, 94.62%]\n\nPosterior tail-area probability p: 0.0\nPosterior prob. of a causal effect: 100.0%\n\nFor more details run the command: print(impact.summary('report'))"
+}
