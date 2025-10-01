@@ -25,6 +25,15 @@ df = pd.read_csv(DATA)
 df[date_col] = pd.to_datetime(df[date_col])
 df = df.sort_values([unit_col, date_col]).copy()
 
+# --- Robust Date Snapping for CausalImpact/DiD Split ---
+# Snapping ensures the intervention date aligns with an actual date in the data.
+intervention = pd.to_datetime(cfg["intervention_date"])
+i0 = df.loc[df[date_col] >= intervention, date_col].min()
+if pd.isna(i0):
+    raise ValueError(f"No dates on/after {intervention.date()} in {date_col}.")
+t0 = i0 # Use the snapped date for DiD/CausalImpact splits
+# --- End Robust Date Snapping ---
+
 # sanity
 need = {date_col, unit_col, y_col, treat_col}
 missing = need - set(df.columns)

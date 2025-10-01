@@ -1,1 +1,8 @@
-*.ipynb filter=nbstripout
+* text=auto
+
+# Keep YAML/R/shell with LF on checkout (CI-friendly)
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sh text eol=lf
+*.R text eol=lf
+*.Rmd text eol=lf
