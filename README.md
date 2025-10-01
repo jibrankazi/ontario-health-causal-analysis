@@ -1,3 +1,6 @@
+![CI](https://github.com/jibrankazi/ontario-health-causal-analysis/actions/workflows/validate-results.yml/badge.svg)
+![Report](https://github.com/jibrankazi/ontario-health-causal-analysis/actions/workflows/render-report.yml/badge.svg)
+
 # Causal Impact of Ontario Health Policy on Incidence Rates
 
 **Author:** Jibran Kazi · [GitHub](https://github.com/jibrankazi) · [Email](mailto:jibrankazi@gmail.com)
