@@ -16,3 +16,4 @@ results/*
 !results/.gitkeep
 figures/*
 !figures/.gitkeep
+/NUL
