@@ -2,27 +2,65 @@ name: Deploy docs to Pages
 on:
   push: { branches: [ "main" ] }
   workflow_dispatch:
+
 permissions:
   contents: read
   pages: write
   id-token: write
+
 concurrency:
   group: "pages"
-  cancel-in-progress: false
+  cancel-in-progress: true
+
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Make a minimal landing page if none exists
+      - name: Ensure docs/index.html
+        run: |
+          mkdir -p docs
+          if [ ! -f docs/index.html ]; then
+            cat > docs/index.html <<'HTML'
+<!doctype html>
+<meta charset="utf-8">
+<title>Ontario Health Causal Analysis</title>
+<h1>Ontario Health Causal Analysis</h1>
+<p>This site publishes the latest report and figures from CI.</p>
+<ul>
+  <li><a href="report.html">Report (HTML)</a></li>
+  <li><a href="report.pdf">Report (PDF)</a></li>
+</ul>
+<h2>Figures</h2>
+<ul>
+  <li><a href="../figures/fig1_event_trends.png">fig1_event_trends.png</a></li>
+  <li><a href="../figures/fig1_event_study.png">fig1_event_study.png</a></li>
+  <li><a href="../figures/fig2_smd_prematch.png">fig2_smd_prematch.png</a></li>
+  <li><a href="../figures/fig3_causalimpact.png">fig3_causalimpact.png</a></li>
+</ul>
+HTML
+          fi
+
+      # If your render workflow dropped reports into results/, copy them to docs/
+      - name: Copy latest report to docs (if present)
+        run: |
+          mkdir -p docs
+          [ -f results/report.html ] && cp results/report.html docs/report.html || true
+          [ -f results/report.pdf ]  && cp results/report.pdf  docs/report.pdf  || true
+
+      - name: Upload artifact for Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./docs
+
   deploy:
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Ensure docs exists
-        run: |
-          mkdir -p docs
-          [ -f docs/index.html ] || echo "<!doctype html><title>Docs</title><h1>Docs</h1>" > docs/index.html
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: "./docs"
       - id: deployment
         uses: actions/deploy-pages@v4
