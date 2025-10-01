@@ -24,6 +24,12 @@ jobs:
           R -e "rmarkdown::render('docs/report.Rmd', output_format='pdf_document',  output_dir='results')"
           R -e "rmarkdown::render('docs/report.Rmd', output_format='html_document', output_dir='results')"
       - name: Upload report artifacts
+
+- name: Copy report to docs
+  run: |
+    mkdir -p docs
+    cp results/report.html docs/ || true
+    cp results/report.pdf docs/ || true
         uses: actions/upload-artifact@v4
         with:
           name: report
