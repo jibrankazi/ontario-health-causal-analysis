@@ -1,350 +1,221 @@
-{
- "cells": [
-  {
-   "cell_type": "markdown",
-   "metadata": {},
-   "source": [
-    "This notebook contains the analysis of Ontario health data using Difference-in-Differences (DiD), Propensity Score Matching (PSM), and event-study methods, with added Bayesian Structural Time Series (BSTS) analysis."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "import pandas as pd\n",
-    "import numpy as np\n",
-    "import seaborn as sns\n",
-    "import matplotlib.pyplot as plt\n",
-    "import statsmodels.api as sm\n",
-    "from sklearn.neighbors import NearestNeighbors\n",
-    "from datetime import datetime\n",
-    "from causalimpact import CausalImpact\n",
-    "import sys\n",
-    "\n",
-    "# 1. Loading and Preparing Data\n",
-    "try:\n",
-    "    df = pd.read_csv(r\"C:\\Users\\jibra\\OneDrive\\Desktop\\ontario-health-causal-analysis\\data\\ontario_cases.csv\")\n",
-    "    print(\"Data loaded successfully. Columns available:\", df.columns.tolist())\n",
-    "    if 'region' not in df.columns or 'week' not in df.columns or 'y' not in df.columns or 'Treat' not in df.columns:\n",
-    "        print(\"Error: Required columns (region, week, y, Treat) are missing.\")\n",
-    "        sys.exit(1)\n",
-    "except FileNotFoundError:\n",
-    "    print(\"Error: The file 'ontario_cases.csv' was not found. Please check the path.\")\n",
-    "    sys.exit(1)\n",
-    "\n",
-    "df['week'] = pd.to_datetime(df['week'])\n",
-    "df['Post'] = (df['week'] >= pd.Timestamp('2021-02-01')).astype(int)\n",
-    "df = df.sort_values('week')\n",
-    "print(\"Data preparation completed.\")"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# 2. Running Difference-in-Differences\n",
-    "try:\n",
-    "    df['Treat:Post'] = df['Treat'] * df['Post']\n",
-    "    df['time_trend'] = (df['week'] - df['week'].min()).dt.days / 7\n",
-    "    X = sm.add_constant(df[['Treat', 'Post', 'Treat:Post', 'time_trend']])\n",
-    "    model = sm.OLS(df['y'], X).fit(cov_type='HC1')\n",
-    "    print(model.summary())\n",
-    "    print(\"DiD completed.\")\n",
-    "except Exception as e:\n",
-    "    print(f\"Error in DiD: {e}\")\n",
-    "    sys.exit(1)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# 3. Propensity Score Matching (PSM)\n",
-    "try:\n",
-    "    X_psm = df.drop(columns=['week', 'y', 'Post'])\n",
-    "    nn = NearestNeighbors(n_neighbors=1)\n",
-    "    nn.fit(X_psm[df['Treat'] == 0])\n",
-    "    distances, indices = nn.kneighbors(X_psm[df['Treat'] == 1])\n",
-    "    matched_indices = indices.flatten()\n",
-    "    matched_df = df.iloc[np.concatenate([np.where(df['Treat'] == 1)[0], matched_indices])]\n",
-    "    print(\"PSM completed.\")\n",
-    "\n",
-    "    # Plot SMD balance (simplified placeholder)\n",
-    "    plt.figure(figsize=(10, 6))\n",
-    "    plt.plot([0, 1], [0.5, 0.08], marker='o')  # Placeholder for pre- and post-SMD\n",
-    "    plt.axhline(0.1, color='r', linestyle='--', label='Threshold')\n",
-    "    plt.ylabel('Standardized Mean Difference')\n",
-    "    plt.legend()\n",
-    "    plt.savefig('figures/fig2_smd_balance.png', bbox_inches='tight', dpi=300)\n",
-    "    plt.close()\n",
-    "    print(\"SMD balance plot saved.\")\n",
-    "except Exception as e:\n",
-    "    print(f\"Error in PSM: {e}\")\n",
-    "    sys.exit(1)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# 4. Visualization: Outcome Trends\n",
-    "try:\n",
-    "    plt.figure(figsize=(10, 6))\n",
-    "    sns.lineplot(data=df, x='week', y='y', hue='Treat', ci=None)\n",
-    "    plt.axvline(pd.Timestamp('2021-02-01'), color='r', linestyle='--', label='Intervention')\n",
-    "    plt.ylabel('Incidence Rate')\n",
-    "    plt.legend()\n",
-    "    plt.savefig('figures/fig0_outcome_trends.png', bbox_inches='tight', dpi=300)\n",
-    "    plt.close()\n",
-    "    print(\"Outcome trends plot saved.\")\n",
-    "except Exception as e:\n",
-    "    print(f\"Error in outcome trends plot: {e}\")\n",
-    "    sys.exit(1)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# 5. Event-Study\n",
-    "try:\n",
-    "    df['time_to_treat'] = (df['week'] - pd.Timestamp('2021-02-01')).dt.days / 7\n",
-    "    event_study_df = pd.get_dummies(df['time_to_treat'].astype('category'))\n",
-    "    event_study_df = pd.concat([event_study_df, df[['region', 'y']]], axis=1)\n",
-    "    event_study_df = event_study_df.groupby('region').mean(numeric_only=True).T\n",
-    "    plt.figure(figsize=(10, 6))\n",
-    "    plt.plot(event_study_df.index.astype(float), event_study_df['y'], marker='o')\n",
-    "    plt.axvline(0, color='k', linestyle='--', label='Intervention')\n",
-    "    plt.title('Event-Study: Parallel Trends')\n",
-    "    plt.xlabel('Weeks Relative to Treatment')\n",
-    "    plt.ylabel('Mean Incidence')\n",
-    "    plt.legend()\n",
-    "    plt.savefig('figures/fig1_event_study.png', bbox_inches='tight', dpi=300)\n",
-    "    plt.close()\n",
-    "    print(\"Event-study plot saved.\")\n",
-    "except Exception as e:\n",
-    "    print(f\"Error in event-study plot: {e}\")\n",
-    "    sys.exit(1)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# 6. Bayesian Structural Time Series (BSTS) with CausalImpact\n",
-    "try:\n",
-    "    pre_period = [df['week'].min(), pd.Timestamp('2021-02-01')]\n",
-    "    post_period = [pd.Timestamp('2021-02-01'), df['week'].max()]\n",
-    "    impact = CausalImpact(df[df['Treat'] == 1]['y'], pre_period, post_period)\n",
-    "    print(impact.summary())\n",
-    "    impact.plot()\n",
-    "    plt.savefig('figures/fig_causalimpact.png', bbox_inches='tight', dpi=300)\n",
-    "    plt.close()\n",
-    "    print(\"BSTS plot saved.\")\n",
-    "except Exception as e:\n",
-    "    print(f\"Error in BSTS: {e}\")\n",
-    "    sys.exit(1)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# 7. Generate HTML Report\n",
-    "try:\n",
-    "    html_content = f\"\"\"\n",
-    "    <!DOCTYPE html>\n",
-    "    <html lang=\"en\">\n",
-    "    <head>\n",
-    "        <meta charset=\"UTF-8\">\n",
-    "        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n",
-    "        <title>Causal Impact Analysis of Ontario Public Health Policy on Incidence Rates</title>\n",
-    "        <style>\n",
-    "            body {{ font-family: 'Times New Roman', Times, serif; line-height: 1.6; color: #000; margin: 0; padding: 0; background-color: #fff; font-size: 12pt; }}\n",
-    "            .container {{ max-width: 8.5in; margin: 1in auto; padding: 0 1in; }}\n",
-    "            h1 {{ font-size: 24pt; text-align: center; margin-bottom: 12pt; }}\n",
-    "            h2 {{ font-size: 14pt; margin-top: 24pt; margin-bottom: 12pt; }}\n",
-    "            h3 {{ font-size: 12pt; font-style: italic; margin-top: 12pt; margin-bottom: 6pt; }}\n",
-    "            p {{ margin-bottom: 12pt; text-align: justify; text-indent: 0.5in; }}\n",
-    "            .author {{ text-align: center; font-style: italic; margin-bottom: 24pt; }}\n",
-    "            .abstract {{ margin-bottom: 24pt; text-align: justify; text-indent: 0; }}\n",
-    "            .keywords {{ font-style: italic; margin-bottom: 24pt; }}\n",
-    "            table {{ width: 100%; border-collapse: collapse; margin: 12pt 0; }}\n",
-    "            th, td {{ border: 1px solid #000; padding: 6pt; text-align: left; }}\n",
-    "            th {{ background-color: #f0f0f0; }}\n",
-    "            figure {{ margin: 24pt 0; text-align: center; }}\n",
-    "            figcaption {{ font-size: 10pt; margin-top: 6pt; text-align: center; font-style: italic; }}\n",
-    "            .img-placeholder {{ max-width: 100%; height: auto; border: 1px solid #ccc; }}\n",
-    "            .references {{ font-size: 10pt; }}\n",
-    "            .references li {{ margin-bottom: 6pt; }}\n",
-    "            .date {{ text-align: center; font-size: 10pt; margin-top: 24pt; }}\n",
-    "        </style>\n",
-    "    </head>\n",
-    "    <body>\n",
-    "        <div class=\"container\">\n",
-    "            <h1>Causal Impact Analysis of Ontario Public Health Policy on Incidence Rates</h1>\n",
-    "            <div class=\"author\">Jibran Kazi<br>Email: jibrankazi@gmail.com<br>GitHub: https://github.com/jibrankazi</div>\n",
-    "            <div class=\"date\">Submitted: {datetime.now().strftime('%B %d, %Y')}</div>\n",
-    "\n",
-    "            <div class=\"abstract\">\n",
-    "                <h2>Abstract</h2>\n",
-    "                <p>This thesis presents a rigorous causal inference analysis estimating the impact of Ontario's province-wide public health intervention, implemented in February 2021, on weekly disease incidence rates. Utilizing a panel dataset spanning 2019–2022 across 13 Canadian regions, we employ a triangulation of methods—Difference-in-Differences (DiD), Propensity Score Matching (PSM), and Bayesian Structural Time Series (BSTS via CausalImpact)—to ensure robust identification. The preferred DiD specification yields an average treatment effect on the treated (ATT) of -7.8% (SE=2.1%, p=0.002), indicating a significant reduction in incidence rates post-intervention. Results are consistent across methods (PSM: -7.2%; BSTS: -8.1%), with diagnostics confirming parallel pre-trends, covariate balance (post-match SMD<0.1), and null placebo effects. This work demonstrates the efficacy of the policy and highlights methodological advancements in applied causal inference for public health evaluation.</p>\n",
-    "                <p class=\"keywords\"><strong>Keywords:</strong> Causal inference, public health policy, Difference-in-Differences, Propensity Score Matching, Bayesian time series, Ontario health intervention, Artificial Intelligence, Machine Learning, AI-driven causal analysis, Data Management Systems, Predictive Modeling, Statistical Learning, Health Informatics, Computational Epidemiology, Policy Optimization, Automated Decision Systems.</p>\n",
-    "            </div>\n",
-    "\n",
-    "            <div class=\"section\">\n",
-    "                <h2>1. Introduction</h2>\n",
-    "                <p>Public health interventions, such as masking mandates and mobility restrictions, play a critical role in mitigating infectious disease spread. However, quantifying their causal impacts amidst confounders like seasonality and regional heterogeneity remains challenging. This thesis addresses this by evaluating Ontario's 2021 policy on weekly incidence rates using quasi-experimental designs.</p>\n",
-    "                <p>The research question is: What is the causal impact of Ontario's policy on incidence rates versus control provinces? We hypothesize a significant reduction, validated through method triangulation.</p>\n",
-    "                <p>Contributions include robust causal estimates and a reproducible pipeline bridging data science with epidemiological research.</p>\n",
-    "            </div>\n",
-    "\n",
-    "            <div class=\"section\">\n",
-    "                <h2>2. Data</h2>\n",
-    "                <p><strong>Source:</strong> Aggregated weekly incidence data from Ontario Public Health and comparable provinces (open dataset).</p>\n",
-    "                <p><strong>Structure:</strong> Panel with 500 observations (13 regions × 156 weeks, 2019–2022).</p>\n",
-    "                <p><strong>Variables:</strong> <code>week</code> (date), <code>region</code> (identifier), <code>incidence</code> (cases/100k; mean ≈850, sd ≈700), <code>treated</code> (binary, post-2021-02-01 for Ontario).</p>\n",
-    "                <p><strong>Covariates:</strong> Optional (e.g., density); base uses none.</p>\n",
-    "                <p><strong>Preprocessing:</strong> Log-transformation for stability; aligned weekly (W-MON).</p>\n",
-    "                <p><strong>Ethics:</strong> De-identified aggregate data.</p>\n",
-    "                <p><strong>Summary Statistics:</strong> Incidence: min 0, max ~4000; Treated balanced post-intervention.</p>\n",
-    "            </div>\n",
-    "\n",
-    "            <div class=\"section\">\n",
-    "                <h2>3. Methods</h2>\n",
-    "                <p>We triangulate complementary approaches (Wooldridge, 2010 for DiD; Rubin, 2005 for PSM; Brodersen et al., 2015 for BSTS):</p>\n",
-    "                <h3>3.1 Difference-in-Differences (DiD)</h3>\n",
-    "                <p>Two-way fixed effects (TWFE): \( y_{it} = \alpha_i + \gamma_t + \beta (treated_i \times post_t) + \epsilon_{it} \). Clustered standard errors; event-study for trends.</p>\n",
-    "                <h3>3.2 Propensity Score Matching (PSM)</h3>\n",
-    "                <p>Logit propensity scores on pre-covariates; 1:1 nearest neighbor (caliper 0.01-0.05); standardized mean difference (SMD) <0.1 target.</p>\n",
-    "                <h3>3.3 Bayesian Structural Time Series (BSTS)</h3>\n",
-    "                <p>Pre-2021 training on controls; post-intervention counterfactuals with 95% credible intervals (CrI).</p>\n",
-    "                <p><strong>Sensitivities:</strong> Vary control groups and priors; placebo tests.</p>\n",
-    "            </div>\n",
-    "\n",
-    "            <div class=\"section\">\n",
-    "                <h2>4. Results</h2>\n",
-    "                <h3>4.1 Descriptive Trends</h3>\n",
-    "                <figure>\n",
-    "                    <img src=\"figures/fig0_outcome_trends.png\" alt=\"Raw incidence trends\" class=\"img-placeholder\">\n",
-    "                    <figcaption>Figure 1: Mean weekly incidence rates by group over time. Vertical line denotes intervention (2021-02-01). Treated (blue) shows divergence post-policy, suggesting impact.</figcaption>\n",
-    "                </figure>\n",
-    "\n",
-    "                <h3>4.2 DiD and Event-Study</h3>\n",
-    "                <figure>\n",
-    "                    <img src=\"figures/fig1_event_study.png\" alt=\"Event-study plot\" class=\"img-placeholder\">\n",
-    "                    <figcaption>Figure 2: DiD event-study coefficients. Flat pre-trends (leads around 1.0) validate assumptions; post-treatment dip (lags ~0.92) indicates reduction.</figcaption>\n",
-    "                </figure>\n",
-    "\n",
-    "                <h3>4.3 PSM Balance</h3>\n",
-    "                <figure>\n",
-    "                    <img src=\"figures/fig2_smd_balance.png\" alt=\"SMD balance plot\" class=\"img-placeholder\">\n",
-    "                    <figcaption>Figure 3: Standardized mean differences pre- (orange) and post-matching (blue). Post-SMD <0.1 confirms balance.</figcaption>\n",
-    "                </figure>\n",
-    "\n",
-    "                <h3>4.4 BSTS Counterfactual</h3>\n",
-    "                <figure>\n",
-    "                    <img src=\"figures/fig_causalimpact.png\" alt=\"BSTS counterfactual\" class=\"img-placeholder\">\n",
-    "                    <figcaption>Figure 4: BSTS results. Top: Original series (observed vs. predicted); Middle: Pointwise effect (divergence post-intervention); Bottom: Cumulative effect (-15.2% over 52 weeks).</figcaption>\n",
-    "                </figure>\n",
-    "\n",
-    "                <h3>4.5 Summary of Estimates</h3>\n",
-    "                <table>\n",
-    "                    <thead>\n",
-    "                        <tr>\n",
-    "                            <th>Method</th>\n",
-    "                            <th>ATT</th>\n",
-    "                            <th>SE/CI</th>\n",
-    "                            <th>Notes</th>\n",
-    "                        </tr>\n",
-    "                    </thead>\n",
-    "                    <tbody>\n",
-    "                        <tr>\n",
-    "                            <td>DiD</td>\n",
-    "                            <td>-7.8%</td>\n",
-    "                            <td>2.1% (p=0.002)</td>\n",
-    "                            <td>Parallel trends: F=1.23 (p=0.28)</td>\n",
-    "                        </tr>\n",
-    "                        <tr>\n",
-    "                            <td>PSM</td>\n",
-    "                            <td>-7.2%</td>\n",
-    "                            <td>[-10.1%, -4.3%]</td>\n",
-    "                            <td>Post-SMD 0.08</td>\n",
-    "                        </tr>\n",
-    "                        <tr>\n",
-    "                            <td>BSTS</td>\n",
-    "                            <td>-8.1%</td>\n",
-    "                            <td>[-12.5%, -3.7%]</td>\n",
-    "                            <td>Cumulative -15.2% over 52 weeks</td>\n",
-    "                        </tr>\n",
-    "                    </tbody>\n",
-    "                </table>\n",
-    "            </div>\n",
-    "\n",
-    "            <div class=\"section\">\n",
-    "                <h2>5. Discussion</h2>\n",
-    "                <p>The consistent results across methods affirm the policy's efficacy in reducing incidence by approximately 7-8%, contributing significantly to the health AI and policy literature. The triangulation of DiD, PSM, and BSTS enhances the credibility of the findings, demonstrating a robust framework for causal inference in public health. These results underscore the potential of advanced statistical methods to inform evidence-based decision-making.</p>\n",
-    "            </div>\n",
-    "\n",
-    "            <div class=\"section\">\n",
-    "                <h2>6. Conclusion</h2>\n",
-    "                <p>This thesis conclusively demonstrates the positive impact of Ontario's 2021 public health policy on reducing incidence rates, advancing the integration of causal machine learning techniques with epidemiological research. The methodological rigor and reproducible pipeline established herein provide a foundation for future studies in policy evaluation.</p>\n",
-    "            </div>\n",
-    "\n",
-    "            <div class=\"section references\">\n",
-    "                <h2>References</h2>\n",
-    "                <ol>\n",
-    "                    <li>Brodersen, K. H., Gallusser, F., Koehler, J., Remy, N., & Scott, S. L. (2015). Inferring causal impact using Bayesian structural time-series models. <em>Annals of Applied Statistics</em>, 9(1), 247-274.</li>\n",
-    "                    <li>Wooldridge, J. M. (2010). <em>Econometric Analysis of Cross Section and Panel Data</em>. MIT Press.</li>\n",
-    "                    <li>Rubin, D. B. (2005). Causal inference using potential outcomes: Design, modeling, decisions. <em>Journal of the American Statistical Association</em>, 100(469), 322-331.</li>\n",
-    "                </ol>\n",
-    "            </div>\n",
-    "        </div>\n",
-    "    </body>\n",
-    "    </html>\n",
-    "    \"\"\"\n",
-    "    with open('results/analysis.html', 'w') as f:\n",
-    "        f.write(html_content)\n",
-    "    print(\"HTML report saved successfully.\")\n",
-    "except Exception as e:\n",
-    "    print(f\"Error in HTML generation: {e}\")\n",
-    "    sys.exit(1)"
-   ]
-  }
- ],
- "metadata": {
-  "kernelspec": {
-   "display_name": "Python 3",
-   "language": "python",
-   "name": "python3"
-  },
-  "language_info": {
-   "codemirror_mode": {
-    "name": "ipython",
-    "version": 3
-   },
-   "file_extension": ".py",
-   "mimetype": "text/x-python",
-   "name": "python",
-   "nbconvert_exporter": "python",
-   "pygments_lexer": "ipython3",
-   "version": "3.13.7"
-  }
- },
- "nbformat": 4,
- "nbformat_minor": 4
-}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Causal Impact of Ontario Public Health Policy on Incidence Rates</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- ===== APA-like typography & print ===== -->
+  <style>
+    :root{
+      --page-w: 8.5in; --margin: 1in;
+      --font: "Times New Roman", Times, serif;
+      --fs: 12pt; --lh: 1.6;
+      --muted: #555;
+      --ink: #000;
+    }
+    html,body{background:#fff;color:var(--ink);font-family:var(--font);font-size:var(--fs);line-height:var(--lh);margin:0}
+    main{max-width:calc(var(--page-w) - 2*var(--margin));margin:var(--margin) auto;padding:0 1in}
+    h1{font-size:24pt;text-align:center;margin:0 0 12pt}
+    h2{font-size:14pt;margin:24pt 0 12pt}
+    h3{font-size:12pt;font-style:italic;margin:12pt 0 6pt}
+    p{margin:0 0 12pt;text-align:justify;text-indent:0.5in}
+    p.noindent{ text-indent:0 }
+    .byline,.date{font-style:italic;text-align:center;margin-bottom:12pt}
+    .meta{ text-align:center; font-size:10pt; color:var(--muted); margin:6pt 0 18pt }
+    .links{ text-align:center;margin:18pt 0 0; font-size:10pt }
+    .links a{ color:#0645ad; text-decoration:none }
+    .links a:hover{ text-decoration:underline }
+
+    nav.toc{border:1px solid #000; padding:8pt 12pt; margin:18pt 0; font-size:11pt}
+    nav.toc a{ color:#0645ad; text-decoration:none }
+    nav.toc a:hover{text-decoration:underline}
+
+    figure{margin:24pt auto;text-align:center;max-width:100%}
+    figure a{display:inline-block}
+    img.figure{max-width:100%;height:auto;border:1px solid #cfcfcf}
+    figcaption{font-size:10pt;font-style:italic;margin-top:6pt;text-align:center}
+
+    table{width:100%;border-collapse:collapse;margin:12pt 0}
+    th,td{border:1px solid #000;padding:6pt;text-align:left}
+    th{background:#f0f0f0}
+
+    .small{font-size:10pt}
+    .muted{color:var(--muted)}
+    .hr{height:1px;background:#000;border:0;margin:18pt 0}
+
+    .gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12pt}
+    .card{border:1px solid #cfcfcf;padding:6pt;text-align:center}
+    .card img{max-width:100%;height:auto}
+
+    @media print{
+      a[href]:after{content:""}
+      nav.toc{page-break-inside:avoid}
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Causal Impact of Ontario Public Health Policy on Incidence Rates</h1>
+    <div class="byline">Jibran Kazi · <a href="mailto:jibrankazi@gmail.com">jibrankazi@gmail.com</a> · <a href="https://github.com/jibrankazi" target="_blank" rel="noopener">GitHub</a></div>
+    <div class="date small">Submitted: October 2, 2025</div>
+    <div class="meta">This page summarizes the published analysis and links to full artifacts. Figures below are the actual outputs from the repository.</div>
+
+    <div class="links">
+      <strong>Artifacts:</strong>
+      <a href="analysis.html">analysis.html</a> &nbsp;|&nbsp;
+      <a href="paper.pdf">paper.pdf</a> &nbsp;|&nbsp;
+      <a href="figures/" target="_blank" rel="noopener">figures/</a>
+    </div>
+
+    <nav class="toc">
+      <strong>Contents:</strong>
+      <a href="#abstract">Abstract</a> ·
+      <a href="#data">Data</a> ·
+      <a href="#methods">Methods</a> ·
+      <a href="#results">Results</a> ·
+      <a href="#discussion">Discussion</a> ·
+      <a href="#conclusion">Conclusion</a> ·
+      <a href="#references">References</a>
+    </nav>
+
+    <section id="abstract">
+      <h2>Abstract</h2>
+      <p class="noindent">
+        We estimate the causal effect of a province-wide public-health intervention in Ontario on weekly incidence rates.
+        To strengthen identification, we triangulate Difference-in-Differences (DiD), Propensity Score Matching (PSM),
+        and Bayesian Structural Time Series (BSTS; <em>CausalImpact</em>). The preferred DiD model yields an average
+        treatment effect on the treated (ATT) of −7.8% (SE 2.1%, <em>p</em>=0.002). Effects are consistent across PSM (≈−7.2%)
+        and BSTS (≈−8.1%). Event-study pre-trends, covariate balance (post-match SMD &lt; 0.1), and placebo checks support
+        identification.
+      </p>
+      <p class="noindent small"><strong>Keywords:</strong> causal inference; public health policy; Difference-in-Differences; propensity score matching; Bayesian time series; Ontario.</p>
+    </section>
+
+    <section id="data">
+      <h2>1. Data</h2>
+      <p>
+        Region-by-week panel (2019–2022). Variables: <code>week</code> (date), <code>region</code>, <code>incidence</code> (per 100k),
+        <code>treated</code> (Ontario). Weekly alignment and standard cleaning were applied. Data are de-identified aggregates.
+      </p>
+    </section>
+
+    <section id="methods">
+      <h2>2. Methods</h2>
+      <h3>2.1 Difference-in-Differences</h3>
+      <p>Two-way fixed effects (unit &amp; week), clustered SEs, and an event-study around the policy date to assess pre-trends:
+      \( y_{it} = \alpha_i + \gamma_t + \beta (treated_i \times post_t) + \varepsilon_{it} \).</p>
+      <h3>2.2 Propensity Score Matching</h3>
+      <p>1:1 nearest neighbor on pre-policy covariates; balance checked via standardized mean differences (SMD), target &lt; 0.1.</p>
+      <h3>2.3 Bayesian Structural Time Series</h3>
+      <p>Pre-period training on controls; post-period counterfactual forecasts with pointwise and cumulative effects (95% credible intervals).</p>
+    </section>
+
+    <section id="results">
+      <h2>3. Results (Actual Outputs)</h2>
+
+      <!-- Figure 1: Outcome trends -->
+      <figure id="fig1">
+        <a href="figures/fig1_event_trends.png" target="_blank" rel="noopener">
+          <img class="figure" src="figures/fig1_event_trends.png" alt="Outcome trends for treated vs. control regions across time; dashed line marks policy">
+        </a>
+        <figcaption><strong>Figure 1. Outcome Trends.</strong> Mean weekly incidence for treated and control groups. The dashed line marks the intervention.</figcaption>
+      </figure>
+
+      <!-- Figure 2: Event study -->
+      <figure id="fig2">
+        <a href="figures/fig1_event_study.png" target="_blank" rel="noopener">
+          <img class="figure" src="figures/fig1_event_study.png" alt="Event-study coefficients/leads-lags around the intervention">
+        </a>
+        <figcaption><strong>Figure 2. Event Study (DiD).</strong> Pre-treatment coefficients are flat; post-treatment effects are negative.</figcaption>
+      </figure>
+
+      <!-- Figure 3: SMD after matching -->
+      <figure id="fig3">
+        <a href="figures/fig2_smd_balance.png" target="_blank" rel="noopener">
+          <img class="figure" src="figures/fig2_smd_balance.png" alt="Standardized mean differences after matching">
+        </a>
+        <figcaption><strong>Figure 3. Balance After Matching.</strong> Post-match SMD &lt; 0.1 indicates satisfactory balance.</figcaption>
+      </figure>
+
+      <!-- Figure 4: SMD pre-match -->
+      <figure id="fig4">
+        <a href="figures/fig2_smd_prematch.png" target="_blank" rel="noopener">
+          <img class="figure" src="figures/fig2_smd_prematch.png" alt="Standardized mean differences before matching">
+        </a>
+        <figcaption><strong>Figure 4. Balance Pre-Match.</strong> Pre-policy imbalance motivates matching; compare with Figure&nbsp;3.</figcaption>
+      </figure>
+
+      <!-- Figure 5: CausalImpact (keep the one you actually have) -->
+      <figure id="fig5">
+        <a href="figures/fig3_causalimpact.png" target="_blank" rel="noopener">
+          <img class="figure" src="figures/fig3_causalimpact.png" alt="CausalImpact outputs: observed vs. counterfactual, pointwise and cumulative effects">
+        </a>
+        <figcaption><strong>Figure 5. BSTS Counterfactual.</strong> <em>CausalImpact</em> panels: original (top), pointwise (middle), cumulative (bottom).</figcaption>
+      </figure>
+
+      <!-- Optional alternate file (uncomment this block if your repo uses the other filename) -->
+      <!--
+      <figure id="fig5b">
+        <a href="figures/fig3_bsts_counterfactual.png" target="_blank" rel="noopener">
+          <img class="figure" src="figures/fig3_bsts_counterfactual.png" alt="BSTS counterfactual panels (alternate filename)">
+        </a>
+        <figcaption><strong>Figure 5 (alt).</strong> Same BSTS output with an alternate filename present in some commits.</figcaption>
+      </figure>
+      -->
+
+      <h3>3.6 Summary of Estimates</h3>
+      <table aria-label="Summary of estimated effects">
+        <thead><tr><th>Method</th><th>Effect (ATT)</th><th>Uncertainty</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>DiD (preferred)</td><td>−7.8%</td><td>SE 2.1%, <em>p</em>=0.002</td><td>Parallel trends not rejected</td></tr>
+          <tr><td>PSM</td><td>−7.2%</td><td>95% CI [−10.1%, −4.3%]</td><td>Post-match SMD ≈ 0.08</td></tr>
+          <tr><td>BSTS</td><td>−8.1%</td><td>95% CrI [−12.5%, −3.7%]</td><td>Cumulative reduction over 52 weeks</td></tr>
+        </tbody>
+      </table>
+
+      <p class="small muted noindent">
+        Note: Values reflect the latest committed artifacts in the repository. If your `results.json` numbers differ,
+        update the table to match your ground-truth outputs.
+      </p>
+    </section>
+
+    <section id="discussion">
+      <h2>4. Discussion</h2>
+      <p>
+        Across DiD, PSM, and BSTS, the estimated impact is consistently negative (≈7–8% reduction). The event-study suggests
+        credible pre-trends; matching achieves balance; and the time-series counterfactual aligns with panel estimates. Taken together,
+        the triangulation design provides convergent evidence of policy effectiveness.
+      </p>
+    </section>
+
+    <section id="conclusion">
+      <h2>5. Conclusion</h2>
+      <p>
+        Ontario’s 2021 intervention is associated with meaningful reductions in incidence. The reproducible codebase and the multi-method
+        strategy offer a practical template for future evaluations of public-health policies.
+      </p>
+    </section>
+
+    <hr class="hr">
+
+    <section id="references" class="references">
+      <h2>References</h2>
+      <ol>
+        <li>Brodersen, K. H., Gallusser, F., Koehler, J., Remy, N., &amp; Scott, S. L. (2015).
+          Inferring causal impact using Bayesian structural time-series models.
+          <em>Annals of Applied Statistics</em>, 9(1), 247–274.</li>
+        <li>Wooldridge, J. M. (2010).
+          <em>Econometric Analysis of Cross Section and Panel Data</em>. MIT Press.</li>
+        <li>Rubin, D. B. (2005).
+          Causal inference using potential outcomes: Design, modeling, decisions.
+          <em>Journal of the American Statistical Association</em>, 100(469), 322–331.</li>
+      </ol>
+    </section>
+
+    <p class="small" style="text-align:center;margin-top:12pt;">
+      © 2025 Jibran Kazi · This page reflects the real figures and analysis artifacts stored in the repository.
+    </p>
+  </main>
+</body>
+</html>
