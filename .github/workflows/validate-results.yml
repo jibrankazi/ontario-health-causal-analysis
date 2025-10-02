@@ -1,6 +1,8 @@
 name: validate-results.yml
+
 on:
-  push: { branches: ["main"] }
+  push:
+    branches: ["main"]
   pull_request:
 
 jobs:
@@ -26,7 +28,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install nbconvert jupyter
+          pip install nbconvert jupyter pycausalimpact seaborn matplotlib statsmodels scikit-learn pandas numpy
 
       - name: Run analysis (and print summary)
         run: |
@@ -35,7 +37,9 @@ jobs:
           python run_analysis.py
           echo "::group::results.json"
           python - << 'PY'
-import json, os
+import json
+import os
+
 p = "results/results.json"
 assert os.path.exists(p), f"Missing {p}"
 with open(p) as f:
@@ -47,13 +51,14 @@ PY
       - name: Sanity checks (numeric & finite)
         run: |
           python - << 'PY'
-import json, math
+import json
+import math
 with open("results/results.json") as f:
     res = json.load(f)
-for k in ("did_att","did_se","did_p","psm_att"):
+for k in ("did_att", "did_se", "did_p", "psm_att"):
     if k in res:
         v = res[k]
-        assert isinstance(v,(int,float)) and math.isfinite(v), f"{k} not finite: {v}"
+        assert isinstance(v, (int, float)) and math.isfinite(v), f"{k} not finite: {v}"
 print("Sanity OK")
 PY
 
