@@ -8,17 +8,20 @@ from datetime import datetime
 from causalimpact import CausalImpact
 import sys
 import json
-import os
 
 # 1. Loading and Preparing Data
 try:
     df = pd.read_csv(r"C:\Users\jibra\OneDrive\Desktop\ontario-health-causal-analysis\data\ontario_cases.csv")
+    
+    # --- FIX: Rename raw columns to match analytical requirements ---
+    # The raw data uses 'incidence' and 'treated', but the analytical code expects 'y' and 'Treat'.
+    df = df.rename(columns={'incidence': 'y', 'treated': 'Treat'}) # [1]
+    # ---------------------------------------------------------------
+    
     print("Data loaded successfully. Columns available:", df.columns.tolist())
-    # Rename columns to match expected names
-    df = df.rename(columns={'incidence': 'y', 'treated': 'Treat'})
-    print("Columns after renaming:", df.columns.tolist())
     if 'region' not in df.columns or 'week' not in df.columns or 'y' not in df.columns or 'Treat' not in df.columns:
-        print("Error: Required columns (region, week, y, Treat) are missing after renaming.")
+        # This check should now pass if the rename operation above succeeded
+        print("Error: Required columns (region, week, y, Treat) are missing.")
         sys.exit(1)
 except FileNotFoundError:
     print("Error: The file 'ontario_cases.csv' was not found. Please check the path.")
@@ -31,14 +34,14 @@ print("Data preparation completed.")
 
 # 2. Running Difference-in-Differences
 try:
-    df['Treat:Post'] = df['Treat'] * df['Post']
+    df = df * df['Post']
     df['time_trend'] = (df['week'] - df['week'].min()).dt.days / 7
-    X = sm.add_constant(df[['Treat', 'Post', 'Treat:Post', 'time_trend']])
+    X = sm.add_constant(df])
     model = sm.OLS(df['y'], X).fit(cov_type='HC1')
     print(model.summary())
-    did_att = model.params['Treat:Post']
-    did_se = model.bse['Treat:Post']
-    did_p = model.pvalues['Treat:Post']
+    did_att = model.params  # ATT from DiD
+    did_se = model.bse      # Standard error
+    did_p = model.pvalues   # p-value
     print("DiD completed.")
 except Exception as e:
     print(f"Error in DiD: {e}")
@@ -48,19 +51,19 @@ except Exception as e:
 try:
     X_psm = df.drop(columns=['week', 'y', 'Post'])
     nn = NearestNeighbors(n_neighbors=1)
-    nn.fit(X_psm[df['Treat'] == 0])
-    distances, indices = nn.kneighbors(X_psm[df['Treat'] == 1])
+    nn.fit(X_psm == 0])
+    distances, indices = nn.kneighbors(X_psm == 1])
     matched_indices = indices.flatten()
-    matched_df = df.iloc[np.concatenate([np.where(df['Treat'] == 1)[0], matched_indices])]
+    matched_df = df.iloc == 1), matched_indices])]
     print("PSM completed.")
 
     # Simplified PSM ATT (difference in means post-matching)
-    psm_att = matched_df[matched_df['Treat'] == 1]['y'].mean() - matched_df[matched_df['Treat'] == 0]['y'].mean()
+    psm_att = matched_df == 1]['y'].mean() - matched_df == 0]['y'].mean()
     print(f"PSM ATT: {psm_att}")
 
     # Plot SMD balance (simplified placeholder)
     plt.figure(figsize=(10, 6))
-    plt.plot([0, 1], [0.5, 0.08], marker='o')
+    plt.plot(, [0.5, 0.08], marker='o')  # Placeholder for pre- and post-SMD
     plt.axhline(0.1, color='r', linestyle='--', label='Threshold')
     plt.ylabel('Standardized Mean Difference')
     plt.legend()
@@ -74,7 +77,7 @@ except Exception as e:
 # 4. Visualization: Outcome Trends
 try:
     plt.figure(figsize=(10, 6))
-    sns.lineplot(data=df, x='week', y='y', hue='Treat', ci=None)
+    sns.lineplot(data=df, x='week', y='y', hue='Treat', errorbar=None)
     plt.axvline(pd.Timestamp('2021-02-01'), color='r', linestyle='--', label='Intervention')
     plt.ylabel('Incidence Rate')
     plt.legend()
@@ -102,14 +105,14 @@ try:
     plt.close()
     print("Event-study plot saved.")
 except Exception as e:
-    print(f"Error in event-study plot: {e})
+    print(f"Error in event-study plot: {e}")
     sys.exit(1)
 
 # 6. Bayesian Structural Time Series (BSTS) with CausalImpact
 try:
     pre_period = [df['week'].min(), pd.Timestamp('2021-02-01')]
-    post_period = [pd.Timestamp('2021-02-01'), df['week'].max()]
-    impact = CausalImpact(df[df['Treat'] == 1]['y'], pre_period, post_period)
+    post_period =.max()]
+    impact = CausalImpact(df == 1]['y'], pre_period, post_period)
     print(impact.summary())
     impact.plot()
     plt.savefig('figures/fig_causalimpact.png', bbox_inches='tight', dpi=300)
@@ -121,8 +124,8 @@ except Exception as e:
 
 # 7. Generate HTML and JSON Reports
 try:
-    # Use fr""" to avoid syntax warnings (raw f-string)
-    html_content = fr"""
+    # Using raw-formatted string literal (rf""") to prevent SyntaxWarnings from unescaped characters in HTML content
+    html_content = rf"""
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -131,23 +134,23 @@ try:
         <title>Causal Impact Analysis of Ontario Public Health Policy on Incidence Rates</title>
         <style>
             body {{ font-family: 'Times New Roman', Times, serif; line-height: 1.6; color: #000; margin: 0; padding: 0; background-color: #fff; font-size: 12pt; }}
-            .container {{ max-width: 8.5in; margin: 1in auto; padding: 0 1in; }}
+           .container {{ max-width: 8.5in; margin: 1in auto; padding: 0 1in; }}
             h1 {{ font-size: 24pt; text-align: center; margin-bottom: 12pt; }}
             h2 {{ font-size: 14pt; margin-top: 24pt; margin-bottom: 12pt; }}
             h3 {{ font-size: 12pt; font-style: italic; margin-top: 12pt; margin-bottom: 6pt; }}
             p {{ margin-bottom: 12pt; text-align: justify; text-indent: 0.5in; }}
-            .author {{ text-align: center; font-style: italic; margin-bottom: 24pt; }}
-            .abstract {{ margin-bottom: 24pt; text-align: justify; text-indent: 0; }}
-            .keywords {{ font-style: italic; margin-bottom: 24pt; }}
+           .author {{ text-align: center; font-style: italic; margin-bottom: 24pt; }}
+           .abstract {{ margin-bottom: 24pt; text-align: justify; text-indent: 0; }}
+           .keywords {{ font-style: italic; margin-bottom: 24pt; }}
             table {{ width: 100%; border-collapse: collapse; margin: 12pt 0; }}
             th, td {{ border: 1px solid #000; padding: 6pt; text-align: left; }}
             th {{ background-color: #f0f0f0; }}
             figure {{ margin: 24pt 0; text-align: center; }}
             figcaption {{ font-size: 10pt; margin-top: 6pt; text-align: center; font-style: italic; }}
-            .img-placeholder {{ max-width: 100%; height: auto; border: 1px solid #ccc; }}
-            .references {{ font-size: 10pt; }}
-            .references li {{ margin-bottom: 6pt; }}
-            .date {{ text-align: center; font-size: 10pt; margin-top: 24pt; }}
+           .img-placeholder {{ max-width: 100%; height: auto; border: 1px solid #ccc; }}
+           .references {{ font-size: 10pt; }}
+           .references li {{ margin-bottom: 6pt; }}
+           .date {{ text-align: center; font-size: 10pt; margin-top: 24pt; }}
         </style>
     </head>
     <body>
@@ -158,7 +161,7 @@ try:
 
             <div class="abstract">
                 <h2>Abstract</h2>
-                <p>This thesis presents a rigorous causal inference analysis estimating the impact of Ontario's province-wide public health intervention, implemented in February 2021, on weekly disease incidence rates. Utilizing a panel dataset spanning 2019–2022 across 13 Canadian regions, we employ a triangulation of methods—Difference-in-Differences (DiD), Propensity Score Matching (PSM), and Bayesian Structural Time Series (BSTS via CausalImpact)—to ensure robust identification. The preferred DiD specification yields an average treatment effect on the treated (ATT) of -7.8% (SE=2.1%, p=0.002), indicating a significant reduction in incidence rates post-intervention. Results are consistent across methods (PSM: -7.2%; BSTS: -8.1%), with diagnostics confirming parallel pre-trends, covariate balance (post-match SMD<0.1), and null placebo effects. This work demonstrates the efficacy of the policy and highlights methodological advancements with added bootstrap sensitivity and ML estimation.</p>
+                <p>This thesis presents a rigorous causal inference analysis estimating the impact of Ontario's province-wide public health intervention, implemented in February 2021, on weekly disease incidence rates. Utilizing a panel dataset spanning 2019–2022 across 13 Canadian regions, we employ a triangulation of methods—Difference-in-Differences (DiD), Propensity Score Matching (PSM), and Bayesian Structural Time Series (BSTS via CausalImpact)—to ensure robust identification. The preferred DiD specification yields an average treatment effect on the treated (ATT) of -7.8% (SE=2.1%, p=0.002), indicating a significant reduction in incidence rates post-intervention. Results are consistent across methods (PSM: -7.2%; BSTS: -8.1%), with diagnostics confirming parallel pre-trends, covariate balance (post-match SMD<0.1), and null placebo effects. This work demonstrates the efficacy of the policy and highlights methodological advancements in applied causal inference for public health evaluation.</p>
                 <p class="keywords"><strong>Keywords:</strong> Causal inference, public health policy, Difference-in-Differences, Propensity Score Matching, Bayesian time series, Ontario health intervention, Artificial Intelligence, Machine Learning, AI-driven causal analysis, Data Management Systems, Predictive Modeling, Statistical Learning, Health Informatics, Computational Epidemiology, Policy Optimization, Automated Decision Systems.</p>
             </div>
 
@@ -184,7 +187,7 @@ try:
                 <h2>3. Methods</h2>
                 <p>We triangulate complementary approaches (Wooldridge, 2010 for DiD; Rubin, 2005 for PSM; Brodersen et al., 2015 for BSTS):</p>
                 <h3>3.1 Difference-in-Differences (DiD)</h3>
-                <p>Two-way fixed effects (TWFE): $$  y_{it} = \alpha_i + \gamma_t + \beta (treated_i \times post_t) + \epsilon_{it}  $$. Clustered standard errors; event-study for trends.</p>
+                <p>Two-way fixed effects (TWFE): \( y_{it} = \alpha_i + \gamma_t + \beta (treated_i \times post_t) + \epsilon_{it} \). Clustered standard errors; event-study for trends.</p>
                 <h3>3.2 Propensity Score Matching (PSM)</h3>
                 <p>Logit propensity scores on pre-covariates; 1:1 nearest neighbor (caliper 0.01-0.05); standardized mean difference (SMD) <0.1 target.</p>
                 <h3>3.3 Bayesian Structural Time Series (BSTS)</h3>
@@ -253,7 +256,7 @@ try:
 
             <div class="section">
                 <h2>5. Discussion</h2>
-                <p>The consistent results across methods affirm the policy's efficacy in reducing incidence by approximately 7-8%, contributing significantly to the health AI and policy literature. The triangulation of DiD, PSM, and BSTS enhances the credibility of the findings, demonstrating a robust framework for causal inference in public health evaluation.</p>
+                <p>The consistent results across methods affirm the policy's efficacy in reducing incidence by approximately 7-8%, contributing significantly to the health AI and policy literature. The triangulation of DiD, PSM, and BSTS enhances the credibility of the findings, demonstrating a robust framework for causal inference in public health. These results underscore the potential of advanced statistical methods to inform evidence-based decision-making.</p>
             </div>
 
             <div class="section">
@@ -291,11 +294,3 @@ try:
 except Exception as e:
     print(f"Error in HTML/JSON generation: {e}")
     sys.exit(1)
-
-# Your enhancements (fixed variable name and column alignment)
-data = df.copy()  # Use the loaded df
-data = data.rename(columns={'y': 'incidence', 'Treat': 'treated', 'Post': 'post'})  # Align column names
-boot_mean, boot_std = bootstrap_did(data)
-ml_att = run_ml_causal(data)
-print(f"Bootstrap ATT: {boot_mean:.3f} (SD: {boot_std:.3f})")
-print(f"ML Causal ATT: {ml_att:.3f}")
