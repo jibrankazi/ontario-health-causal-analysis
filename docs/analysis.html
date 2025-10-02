@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>Causal Impact of Ontario Public Health Policy on Incidence Rates: A Triangulated Quasi-Experimental Analysis</title>
+    <title>Policy Evaluation Report: Conflicting Causal Estimates of the Ontario Health Intervention</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="author" content="Jibran Kazi">
-    <meta name="description" content="A comprehensive research summary showcasing a causal inference study using Difference-in-Differences, Propensity Score Matching, and Bayesian Structural Time Series.">
+    <meta name="description" content="A formal report detailing the results of a triangulated causal analysis using DiD, PSM, and BSTS, highlighting a critical finding of non-convergence in treatment effect estimates.">
 
     <!-- ===== Academic Formatting (APA-like Style) ===== -->
     <style>
@@ -32,20 +32,13 @@
         /* Metadata */
         .byline { text-align:center; font-style:normal; margin-bottom:12pt; font-size: 11pt;}
         .meta { text-align:center; font-size:10pt; color:var(--muted); margin:8pt 0 30pt; }
-        .links { text-align:center; margin:24pt 0 0; font-size:11pt; }
-        .links a { color:#0645ad; text-decoration:none; font-weight: bold; }
-        .links a:hover { text-decoration:underline; }
 
         /* Table of Contents */
         nav.toc { border:1px solid #000; padding:12pt; margin:24pt 0; font-size:11pt; line-height: 2; }
         nav.toc strong { display: block; margin-bottom: 6pt; font-size: 12pt; }
-        nav.toc a { color:#0645ad; text-decoration:none; }
-        nav.toc a:hover { text-decoration:underline; }
-
+        
         /* Figures and Tables */
-        figure { margin:32pt auto; text-align:center; max-width:100%; }
-        figure a { display:inline-block; }
-        img.figure { max-width:95%; height:auto; border:1px solid #cfcfcf; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        figure { margin:32pt auto; text-align:center; max-width:100%; border: 1px dashed #aaa; padding: 20px; background: #f9f9f9; }
         figcaption { font-size:10pt; margin-top:8pt; text-align:center; line-height: 1.4; }
         figcaption strong { font-style: italic; }
 
@@ -57,177 +50,88 @@
         .muted { color:var(--muted); }
         .hr { height:1px; background:#000; border:0; margin:40pt 0; }
         
-        /* Lists */
-        ul, ol { margin: 0 0 18pt 0; padding-left: 0.5in; }
-        li { margin-bottom: 6pt; }
-
         /* LaTeX style for equations */
         .equation { text-align: center; font-size: 14pt; margin: 18pt 0; }
     </style>
 </head>
 <body>
     <main>
-        <h1>Causal Impact of Ontario Public Health Policy on Incidence Rates: A Triangulated Quasi-Experimental Analysis</h1>
-        <div class="byline">Jibran Kazi · <a href="mailto:jibrankazi@gmail.com">jibrankazi@gmail.com</a> · <a href="https://github.com/jibrankazi/ontario-health-causal-analysis" target="_blank" rel="noopener">GitHub Repository</a></div>
-        <div class="meta">This page presents the definitive results, narrative, and figures from a foundational causal analysis project. The methodology employs rigorous quasi-experimental design triangulation to establish convergent validity.</div>
-
-        <div class="links">
-            <!-- NOTE: These are placeholder links (#) and must be updated by the user to point to the live GitHub files (e.g., the analysis notebook HTML, the PDF, and the figures folder) -->
-            <strong>Key Artifacts:</strong>
-            <a href="#">Full Analysis Notebook (Code & Results)</a> &nbsp;|&nbsp;
-            <a href="#">Preprint/Manuscript (PDF)</a> &nbsp;|&nbsp;
-            <a href="figures/" target="_blank" rel="noopener">Figures Directory</a>
-        </div>
+        <h1>Policy Evaluation Report: Conflicting Causal Estimates of the Ontario Health Intervention</h1>
+        <div class="byline">Jibran Kazi · <a href="mailto:jibrankazi@gmail.com">jibrankazi@gmail.com</a></div>
+        <div class="meta">Formal report detailing the empirical findings and critical methodological non-convergence.</div>
 
         <nav class="toc">
             <strong>Table of Contents</strong>
-            <a href="#abstract">Abstract</a> · <a href="#introduction">1. Introduction</a> · <a href="#data">2. Data & Setup</a> · <a href="#methods">3. Methodology and Identification</a> · <a href="#results">4. Empirical Results</a> · <a href="#discussion">5. Discussion and Future Research</a> · <a href="#conclusion">6. Conclusion</a> · <a href="#references">References</a>
+            <a href="#abstract">Abstract</a> · <a href="#introduction">1. Introduction</a> · <a href="#methods">2. Methodology</a> · <a href="#results">3. Empirical Results</a> · <a href="#discussion">4. Discussion</a> · <a href="#references">References</a>
         </nav>
 
         <section id="abstract">
             <h2>Abstract</h2>
             <p class="noindent">
-                This study employs a robust **quasi-experimental design triangulation** to estimate the causal effect of a province-wide public health intervention in Ontario (O-PHI, implemented February 2021) on subsequent weekly incidence rates. We use three complementary methods—**Two-Way Fixed Effects Difference-in-Differences (DiD)**, **Propensity Score Matching (PSM)**, and **Bayesian Structural Time Series (BSTS)**—to ensure convergent validity and methodological robustness. The preferred DiD model, validated by a stringent event-study test, yields an Average Treatment Effect on the Treated (ATT) of a **$-7.8\%$ reduction** in incidence (SE $2.1\%$, $p=0.002$). This finding is strongly corroborated by PSM (ATT $\approx -7.2\%$) and the BSTS counterfactual (Cumulative Effect $\approx -8.1\%$). Identification validity is systematically supported by non-significant pre-trends and high post-match covariate balance. These results serve as the **empirical benchmark** for future extensions exploring dynamic treatment effects and structural modeling of policy impact.
+                This study evaluates the causal effect of the 2021 Ontario Public Health Intervention (O-PHI) on regional incidence rates using **methodological triangulation**. We employed Difference-in-Differences (DiD), Propensity Score Matching (PSM), and Bayesian Structural Time Series (BSTS) to derive a robust estimate of the Average Treatment Effect on the Treated (ATT). The analysis resulted in **critical non-convergence** across estimates: the DiD model indicated a non-significant reduction of **$-108.6$ units** ($p=0.30$), while the BSTS counterfactual suggested a significant **$+86.5\%$ increase** in incidence relative to the synthetic control. Diagnostics, including event-study tests, support the internal validity of the DiD structure, suggesting the observed discrepancy is due to the inherent instability or differential assumptions about the counterfactual. These conflicting findings necessitate caution in policy conclusions and underscore the need for advanced causal methods, such as Synthetic Difference-in-Differences (SDID) and Causal Forests, to achieve convergence.
             </p>
-            <p class="noindent small"><strong>Keywords:</strong> causal inference; quasi-experiment; public health policy; Difference-in-Differences; Propensity Score Matching; Bayesian Structural Time Series; convergent validity.</p>
+            <p class="noindent small"><strong>Keywords:</strong> Causal Inference; DiD; BSTS; Non-Convergence; Policy Evaluation; Incidence Rates.</p>
         </section>
 
         <section id="introduction">
-            <h2>1. Introduction and Research Objective </h2>
+            <h2>1. Introduction</h2>
             <p>
-                The primary objective of this research is to estimate the causal effect of the 2021 O-PHI on regional disease incidence. Policy evaluations in high-stakes, non-randomized environments require **transparent identification strategies** that minimize selection and confounding bias. By adopting a multi-methodological approach, this analysis seeks to produce an estimate that is robust to the violation of assumptions inherent in any single method, providing a strong foundation for advanced causal modeling.
-            </p>
-        </section>
-
-        <section id="data">
-            <h2>2. Data and Analytical Setup  </h2>
-            <p>
-                The analysis uses a **region-level panel dataset** spanning 2019–2022, observed at a **weekly frequency**, including Ontario (treated unit) and selected comparator provinces/regions (control units). Key variables include:
-            </p>
-            <ul>
-                <li>**Outcome Variable:** Weekly incidence rate (cases per 100,000 population).</li>
-                <li>**Treatment Variable:** A binary indicator, $T_{it} = \text{Ontario}_i \times \text{Post Policy}_t$, marking the treated status following the February 2021 implementation.</li>
-                <li>**Data Scope:** The analysis focuses on aggregate panel data suitable for establishing the provincial-level average effect.</li>
-            </ul>
-            <p>
-                All data preprocessing, harmonization of time series, and the full analytical pipeline are archived in the companion GitHub repository, ensuring **complete reproducibility**.
+                The accurate estimation of public health policy impact in non-randomized settings requires rigorous quasi-experimental methods. This report summarizes the findings from the first phase of an analysis dedicated to assessing the causal effect of the O-PHI on weekly incidence rates in Ontario compared to a selected control group of provinces/regions. Our initial strategy relied on triangulating three distinct causal estimators to ensure confidence in the final ATT. The subsequent sections detail the methods employed and the unexpected empirical results.
             </p>
         </section>
 
         <section id="methods">
-            <h2>3. Methodology and Identification Strategy </h2>
-
-            <h3>3.1. Two-Way Fixed Effects Difference-in-Differences (DiD)</h3>
+            <h2>2. Methodology</h2>
             <p>
-                The DiD model is the primary estimator, utilizing unit ($\alpha_i$) and time ($\gamma_t$) fixed effects to absorb unobserved, time-invariant heterogeneity and common time shocks, respectively.
-            </p>
-            <div class="equation">
-                $$ y_{it} = \alpha_i + \gamma_t + \beta T_{it} + \varepsilon_{it} $$
-            </div>
-            <p>
-                Where $y_{it}$ is the incidence rate in region $i$ at time $t$, $\alpha_i$ is the region fixed effect, $\gamma_t$ is the time fixed effect, and $T_{it}$ is the interaction term representing the treatment status ($\text{Treated}_i \times \text{Post}_t$). The coefficient $\beta$ captures the **Average Treatment Effect on the Treated (ATT)**. The **parallel trends assumption**, crucial for identification, is tested via an event-study specification (Figure 2). **Standard errors are clustered at the region level** to account for serial correlation, as is standard practice in panel data econometrics.
-            </p>
-
-            <h3>3.2. Propensity Score Matching (PSM)</h3>
-            <p>
-                PSM serves as a complementary method to address baseline systematic differences in pre-policy covariates. We performed **1:1 nearest neighbor matching** (without replacement) using pre-policy characteristics to construct a covariate-balanced control group. Balance is formally assessed using **Standardized Mean Differences (SMD)** (Figures 3 and 4).
-            </p>
-
-            <h3>3.3. Bayesian Structural Time Series (BSTS) / CausalImpact</h3>
-            <p>
-                The BSTS method provides a **fully Bayesian counterfactual synthesis**. It models the relationship between the treated series and control series during the pre-policy period and forecasts the predicted outcome for Ontario in the absence of the intervention, quantifying uncertainty via 95\% Credible Intervals (Figure 5).
-            </p>
-        </section>
-
-        <section id="results">
-            <h2>4. Empirical Results and Diagnostic Checks</h2>
-
-            <!-- Figure 1: Outcome trends (External URL) -->
-            <figure id="fig1">
-                <a href="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig1_event_trends.png" target="_blank" rel="noopener">
-                    <img class="figure" src="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig1_event_trends.png" 
-                        alt="Outcome trends for treated vs. control regions across time; dashed line marks policy">
-                </a>
-                <figcaption><strong>Figure 1. Outcome Trends and Intervention Date.</strong> Mean weekly incidence rates for the treated region (Ontario) and the synthesized control group over the study period. Pre-intervention trajectories visually support the parallel trends assumption.</figcaption>
-            </figure>
-
-            <!-- Figure 2: Event study (External URL) -->
-            <figure id="fig2">
-                <a href="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig1_event_study.png" target="_blank" rel="noopener">
-                    <img class="figure" src="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig1_event_study.png" 
-                        alt="Event-study coefficients/leads-lags around the intervention">
-                </a>
-                <figcaption><strong>Figure 2. Event Study Diagnostics (DiD).</strong> Estimated coefficients for leads relative to the policy date ($t=0$) are statistically insignificant, **formally confirming the parallel trends assumption** necessary for the DiD model's validity.</figcaption>
-            </figure>
-            
-            <!-- Figure 3: SMD pre-match (External URL) -->
-            <figure id="fig3">
-                <a href="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig2_smd_prematch.png" target="_blank" rel="noopener">
-                    <img class="figure" src="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig2_smd_prematch.png" 
-                        alt="Standardized mean differences before matching">
-                </a>
-                <figcaption><strong>Figure 3. Covariate Imbalance (Pre-Match).</strong> Pre-matching SMD values show significant imbalances across baseline covariates, justifying the subsequent use of PSM to ensure the control group is comparable.</figcaption>
-            </figure>
-
-            <!-- Figure 4: SMD after matching (External URL) -->
-            <figure id="fig4">
-                <a href="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig2_smd_balance.png" target="_blank" rel="noopener">
-                    <img class="figure" src="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig2_smd_balance.png" 
-                        alt="Standardized mean differences after matching">
-                </a>
-                <figcaption><strong>Figure 4. Covariate Balance (Post-Match).</strong> Post-matching SMD values are all below the standard threshold of 0.1, indicating that the PSM procedure successfully achieved **high covariate balance**.</figcaption>
-            </figure>
-
-            <!-- Figure 5: CausalImpact - Using the public URL for robust loading -->
-            <figure id="fig5">
-                <a href="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig3_bsts_counterfactual.png" target="_blank" rel="noopener">
-                    <img class="figure" 
-                        src="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig3_bsts_counterfactual.png" 
-                        alt="BSTS CausalImpact outputs: observed vs. counterfactual, pointwise and cumulative effects"
-                    >
-                </a>
-                <figcaption><strong>Figure 5. BSTS Counterfactual and Treatment Effect.</strong> (Top) Observed incidence (black) vs. predicted counterfactual (blue, 95% CrI); (Bottom) The **cumulative treatment effect**, demonstrating a sustained, statistically credible reduction following the intervention.</figcaption>
-            </figure>
-
-            <h3>4.6. Convergence of Causal Estimates </h3>
-            <p>
-                The consistency of the estimated effects across three distinct methodologies strengthens the causal claim significantly, establishing **convergent validity**.
-            </p>
-            <table aria-label="Summary of estimated effects from three methods">
-                <thead><tr><th>Methodology</th><th>Estimated Effect (ATT)</th><th>Uncertainty Metric</th><th>Identification Strategy</th></tr></thead>
-                <tbody>
-                    <tr><td>DiD (TWFE)</td><td>$\mathbf{-7.8\%}$</td><td>SE $2.1\%$, $p=0.002$</td><td>Parallel Trends (Validated by Event Study)</td></tr>
-                    <tr><td>PSM (Nearest Neighbor)</td><td>$-7.2\%$</td><td>$95\%$ CI $[-10.1\%, -4.3\%]$</td><td>High Covariate Balance (Post-match SMD $<0.1$)</td></tr>
-                    <tr><td>BSTS / CausalImpact</td><td>$-8.1\%$</td><td>$95\%$ CrI $[-12.5\%, -3.7\%]$</td><td>Synthetic Control Forecasting (Bayesian Framework)</td></tr>
-                </tbody>
-            </table>
-
-        </section>
-
-        <section id="discussion">
-            <h2>5. Discussion, Limitations, and Future Research</h2>
-
-            <h3>5.1. Discussion of Results</h3>
-            <p>
-                The convergence of estimates provides robust quantitative evidence of the O-PHI policy's effectiveness, suggesting a meaningful reduction in incidence rates. The use of multiple quasi-experimental techniques provides strong defense against omitted variable bias and model misspecification. The event-study and covariate balance checks affirm the underlying assumptions for identification.
-            </p>
-
-            <h3>5.2. Limitations and Future Directions</h3>
-            <p>
-                While the current results are robust, they are constrained by the use of **aggregate, single-outcome data** and reliance on **standard econometric estimators**. To achieve a PhD-level contribution, future work must address:
+                The analysis uses a weekly panel dataset spanning 2019–2022. The identification strategy hinges on the construction of a valid counterfactual, employing three distinct techniques, each with unique identifying assumptions:
             </p>
             <ul>
-                <li>**Data Granularity:** Acquiring sub-provincial (county- or city-level) or individual data is required to analyze **heterogeneous treatment effects** across demographics (e.g., age, income) or urbanicity.</li>
-                <li>**Single Outcome Bias:** Expanding the analysis to include secondary outcomes (e.g., hospitalizations, mobility trends) to assess policy mediators and broader impacts.</li>
-                <li>**Methodological Innovation:** The current TWFE model is susceptible to aggregation bias in the presence of staggered policy adoption. Future research must implement **robust DiD estimators** (e.g., Callaway & Sant'Anna) and explore **Hybrid Causal Machine Learning (HCML)** frameworks to model non-linear confounding and spatial spillovers between provinces.</li>
-                <li>**Theoretical Framing:** The findings must be contextualized within established **epidemiological models** (e.g., SIR/SEIR) or behavioral frameworks to provide theoretical mechanism for the observed effect.</li>
+                <li>**Difference-in-Differences (DiD):** Relies on the **parallel trends assumption**, formally tested via an event-study model. Standard errors are clustered at the region level.</li>
+                <li>**Propensity Score Matching (PSM):** Used to construct a covariate-balanced control group based on pre-intervention characteristics, mitigating selection bias.</li>
+                <li>**Bayesian Structural Time Series (BSTS):** Generates a data-driven synthetic counterfactual, providing a posterior probability of a causal effect by comparing the observed outcome to the forecasted (untreated) outcome.</li>
             </ul>
         </section>
 
-        <section id="conclusion">
-            <h2>6. Conclusion</h2>
+        <section id="results">
+            <h2>3. Empirical Results</h2>
             <p>
-                In sum, the 2021 Ontario public health intervention is reliably estimated to have caused a **$\sim7-8\%$ reduction** in weekly incidence rates. This reproducible analysis provides a high-confidence empirical benchmark, laying the necessary groundwork for advanced doctoral research focused on methodological innovation, heterogeneity analysis, and policy optimization.
+                Diagnostic checks confirmed the suitability of the data for each model. Specifically, the DiD event-study plot showed statistically insignificant pre-trends, satisfying the core parallel trends assumption. PSM achieved high post-match balance (SMD $<0.1$). However, the resulting treatment effect estimates failed to converge, as detailed below.
+            </p>
+
+            <table aria-label="Summary of estimated effects from three methods">
+                <thead><tr><th>Methodology</th><th>Estimated Effect (ATT)</th><th>Uncertainty Metric</th><th>Interpretation</th></tr></thead>
+                <tbody>
+                    <tr><td>DiD (TWFE)</td><td>$\mathbf{-108.61}$ (units)</td><td>SE $105.79$, $p=0.30$</td><td>Statistically **insignificant** reduction.</td></tr>
+                    <tr><td>PSM (Nearest Neighbor)</td><td>$-37.44$ (units)</td><td>N/A</td><td>Reduction, direction consistent with DiD.</td></tr>
+                    <tr><td>BSTS / CausalImpact</td><td>$+86.5\%$ Relative Effect</td><td>$95\%$ CrI $[78.47\%, 94.62\%]$</td><td>Significant **increase** relative to counterfactual.</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Figure Placements (Content Omitted)</h3>
+            <p>The following text blocks serve as placeholders for the figures:</p>
+            
+            <figure id="fig2">
+                [FIGURE 2 PLACEHOLDER: DiD Event Study Diagnostics (Coefficients and 95% CI plotted around t=0).]
+                <figcaption><strong>Figure 2. DiD Event Study Diagnostics.</strong> (Omitted for clarity.) Plot confirms insignificant pre-trends, supporting the parallel trends assumption.</figcaption>
+            </figure>
+            
+            <figure id="fig5">
+                [FIGURE 5 PLACEHOLDER: BSTS Counterfactual and Cumulative Treatment Effect.]
+                <figcaption><strong>Figure 5. BSTS Counterfactual and Treatment Effect.</strong> (Omitted for clarity.) Plot demonstrates the observed series exceeding the synthetic counterfactual, leading to the positive cumulative effect estimate.</figcaption>
+            </figure>
+            
+        </section>
+
+        <section id="discussion">
+            <h2>4. Discussion and Path Forward</h2>
+            <p>
+                The primary finding is a fundamental methodological non-convergence. While both traditional DiD and PSM point towards a policy-induced reduction (albeit non-significant for DiD), the sophisticated BSTS model strongly rejects this conclusion, indicating a significant rise in incidence relative to the synthetic baseline. This contradiction invalidates the presentation of a single, unified ATT.
+            </p>
+            <p>
+                This outcome suggests one of two critical issues: 1) The BSTS synthetic control is highly unstable or sensitive to model specification, leading to an artificially low counterfactual prediction. 2) The DiD/PSM assumptions, while formally satisfied by diagnostics, mask underlying confounding, such as **heterogeneous treatment effects (HTE)** or **spatiotemporal spillovers**, which the current aggregate analysis fails to capture.
+            </p>
+            <p>
+                Future research must address this instability by employing methods that create a more robust counterfactual, such as **Synthetic Difference-in-Differences (SDID)**, and by decomposing the effect into sub-populations using **Causal Forest** methods to identify where the policy succeeded or failed.
             </p>
         </section>
 
@@ -235,14 +139,13 @@
         <section id="references" class="references">
             <h2>References</h2>
             <ol>
+                <li>Arkhangelsky, D., Athey, S., Hirshberg, D. A., Imbens, G. W., &amp; Wager, S. (2021). Synthetic difference-in-differences. <em>arXiv preprint arXiv:1911.09591</em>.</li>
+                <li>Wager, S., &amp; Athey, S. (2018). Estimation and inference of heterogeneous treatment effects using random forests. <em>Journal of the American Statistical Association</em>, 113(523), 1226–1242.</li>
                 <li>Brodersen, K. H., Gallusser, F., Koehler, J., Remy, N., &amp; Scott, S. L. (2015). Inferring causal impact using Bayesian structural time-series models. <em>Annals of Applied Statistics</em>, 9(1), 247–274.</li>
-                <li>Wooldridge, J. M. (2010). <em>Econometric Analysis of Cross Section and Panel Data</em> (2nd ed.). MIT Press.</li>
-                <li>Rubin, D. B. (2005). Causal inference using potential outcomes: Design, modeling, decisions. <em>Journal of the American Statistical Association</em>, 100(469), 322–331.</li>
-                <li>Callaway, B., &amp; Sant'Anna, P. H. (2021). Difference-in-differences with multiple time periods. <em>Journal of Econometrics</em>, 225(2), 200–230.</li>
             </ol>
         </section>
 
-        <p class="small" style="text-align:center; margin-top:24pt;">© 2025 Jibran Kazi. All rights reserved. | Built on a foundation of reproducible research principles.</p>
+        <p class="small" style="text-align:center; margin-top:24pt;">© Jibran Kazi. All rights reserved. | Report last revised for clarity and accuracy.</p>
     </main>
 </body>
 </html>
