@@ -100,7 +100,7 @@
         </section>
 
         <section id="data">
-            <h2>2. Data and Analytical Setup </h2>
+            <h2>2. Data and Analytical Setup  </h2>
             <p>
                 The analysis uses a **region-level panel dataset** spanning 2019–2022, observed at a **weekly frequency**, including Ontario (treated unit) and selected comparator provinces/regions (control units). Key variables include:
             </p>
@@ -144,8 +144,8 @@
 
             <!-- Figure 1: Outcome trends -->
             <figure id="fig1">
-                <a href="figures/fig1_event_trends.png" target="_blank" rel="noopener">
-                    <img class="figure" src="figures/fig1_event_trends.png" 
+                <a href="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig1_event_trends.png" target="_blank" rel="noopener">
+                    <img class="figure" src="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig1_event_trends.png" 
                          alt="Outcome trends for treated vs. control regions across time; dashed line marks policy">
                 </a>
                 <figcaption><strong>Figure 1. Outcome Trends and Intervention Date.</strong> Mean weekly incidence rates for the treated region (Ontario) and the synthesized control group over the study period. Pre-intervention trajectories visually support the parallel trends assumption.</figcaption>
@@ -153,8 +153,8 @@
 
             <!-- Figure 2: Event study -->
             <figure id="fig2">
-                <a href="figures/fig1_event_study.png" target="_blank" rel="noopener">
-                    <img class="figure" src="figures/fig1_event_study.png" 
+                <a href="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig1_event_study.png" target="_blank" rel="noopener">
+                    <img class="figure" src="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig1_event_study.png" 
                          alt="Event-study coefficients/leads-lags around the intervention">
                 </a>
                 <figcaption><strong>Figure 2. Event Study Diagnostics (DiD).</strong> Estimated coefficients for leads relative to the policy date ($t=0$) are statistically insignificant, **formally confirming the parallel trends assumption** necessary for the DiD model's validity.</figcaption>
@@ -162,8 +162,8 @@
             
             <!-- Figure 3: SMD pre-match -->
             <figure id="fig3">
-                <a href="figures/fig2_smd_prematch.png" target="_blank" rel="noopener">
-                    <img class="figure" src="figures/fig2_smd_prematch.png" 
+                <a href="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig2_smd_prematch.png" target="_blank" rel="noopener">
+                    <img class="figure" src="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig2_smd_prematch.png" 
                          alt="Standardized mean differences before matching">
                 </a>
                 <figcaption><strong>Figure 3. Covariate Imbalance (Pre-Match).</strong> Pre-matching SMD values show significant imbalances across baseline covariates, justifying the subsequent use of PSM to ensure the control group is comparable.</figcaption>
@@ -171,20 +171,20 @@
 
             <!-- Figure 4: SMD after matching -->
             <figure id="fig4">
-                <a href="figures/fig2_smd_balance.png" target="_blank" rel="noopener">
-                    <img class="figure" src="figures/fig2_smd_balance.png" 
+                <a href="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig2_smd_balance.png" target="_blank" rel="noopener">
+                    <img class="figure" src="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig2_smd_balance.png" 
                          alt="Standardized mean differences after matching">
                 </a>
                 <figcaption><strong>Figure 4. Covariate Balance (Post-Match).</strong> Post-matching SMD values are all below the standard threshold of 0.1, indicating that the PSM procedure successfully achieved **high covariate balance**.</figcaption>
             </figure>
 
-            <!-- Figure 5: CausalImpact - PATH CORRECTED -->
+            <!-- Figure 5: CausalImpact - PATH CORRECTED to use ABSOLUTE URL -->
             <figure id="fig5">
-                <a href="figures/fig3_bsts_counterfactual.png" target="_blank" rel="noopener">
+                <a href="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig3_bsts_counterfactual.png" target="_blank" rel="noopener">
                     <img class="figure" 
-                        src="figures/fig3_bsts_counterfactual.png" 
+                        src="https://raw.githubusercontent.com/jibrankazi/ontario-health-causal-analysis/main/figures/fig3_bsts_counterfactual.png" 
                         alt="BSTS CausalImpact outputs: observed vs. counterfactual, pointwise and cumulative effects"
-                        onerror="this.src='https://placehold.co/600x400/FF5733/ffffff?text=BSTS%20Figure%20Missing%0ACheck%20figures/fig3_bsts_counterfactual.png'"
+                        onerror="this.src='https://placehold.co/600x400/FF5733/ffffff?text=BSTS%20Figure%20Missing%0AExternal%20Image%20Failed%20to%20Load'"
                     >
                 </a>
                 <figcaption><strong>Figure 5. BSTS Counterfactual and Treatment Effect.</strong> (Top) Observed incidence (black) vs. predicted counterfactual (blue, 95% CrI); (Bottom) The **cumulative treatment effect**, demonstrating a sustained, statistically credible reduction following the intervention.</figcaption>
