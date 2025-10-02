@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ontario Health Causal Analysis</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:880px;margin:40px auto;padding:0 16px;line-height:1.5}
+    h1{margin-top:0}
+    ul{margin-top:0}
+    code{background:#f4f4f4;padding:2px 6px;border-radius:4px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+    .card{border:1px solid #ddd;border-radius:12px;padding:12px}
+    img{max-width:100%;height:auto;display:block}
+  </style>
+</head>
+<body>
+  <h1>Ontario Health Causal Analysis</h1>
+  <p>This page publishes the latest figures and the full HTML report.</p>
+  <ul>
+    <li><a href="analysis.html">Full report (HTML)</a></li>
+  </ul>
+
+  <h2>Key figures</h2>
+  <div class="grid">
+    <div class="card"><img src="figures/fig1_event_trends.png" alt="Event trends" /></div>
+    <div class="card"><img src="figures/fig1_event_study.png" alt="Event study" /></div>
+    <div class="card"><img src="figures/fig2_smd_prematch.png" alt="SMD balance (pre)" /></div>
+    <div class="card"><img src="figures/fig3_causalimpact.png" alt="CausalImpact" /></div>
+  </div>
+</body>
+</html>
