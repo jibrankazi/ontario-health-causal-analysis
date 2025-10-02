@@ -1,12 +1,8 @@
-# Ontario Health Causal Analysis
-
-This site hosts the project summary and the full rendered report.
-
-- **Full report (HTML):** [analysis.html](analysis.html)
-- **Key figures:**  
-  ![](figures/fig1_event_trends.png)  
-  ![](figures/fig1_event_study.png)  
-  ![](figures/fig2_smd_prematch.png)  
-  ![](figures/fig3_causalimpact.png)
-
-_Source code & datasets: see the repository._
+<h1>Ontario Health Causal Analysis</h1>
+<p>This project evaluates the impact of Ontario's health policy on incidence rates using causal inference techniques.</p>
+<ul>
+  <li><a href="analysis.html">📊 Full Report (HTML)</a></li>
+  <li><a href="figures/fig1_event_study.png">📈 Event Study Figure</a></li>
+  <li><a href="figures/fig2_smd_balance.png">📉 SMD Balance Plot</a></li>
+  <li><a href="figures/fig3_bsts_counterfactual.png">📊 Counterfactual Plot</a></li>
+</ul>
