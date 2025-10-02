@@ -1,5 +1,3 @@
-name: validate-results.yml
-
 on:
   push:
     branches: ["main"]
@@ -19,7 +17,6 @@ jobs:
           sudo apt-get install -y tree >/dev/null 2>&1 || true
           tree -L 2 || true
           echo "::endgroup::"
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -67,7 +64,6 @@ PY
           echo "::group::tree -L 3 (post)"
           tree -L 3 || true
           echo "::endgroup::"
-
       - name: Upload artifacts (if present)
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
