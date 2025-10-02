@@ -1,4 +1,66 @@
-<h2>Causal Impact Analysis</h2>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Ontario Health Causal Analysis</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 40px;
+      background-color: #f9f9f9;
+      color: #333;
+    }
+    h1, h2 {
+      color: #005a9c;
+    }
+    img {
+      max-width: 100%;
+      height: auto;
+      margin-bottom: 20px;
+      border: 1px solid #ccc;
+    }
+    .section {
+      margin-bottom: 40px;
+    }
+    a {
+      color: #007acc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Ontario Health Causal Analysis</h1>
+  <p>This page presents visual and statistical evidence from a causal impact study evaluating a health policy intervention in Ontario.</p>
+
+  <div class="section">
+    <h2>📊 Outcomes Over Time</h2>
+    <img src="figures/fig1_event_trends.png" alt="Outcomes per 100,000 people">
+  </div>
+
+  <div class="section">
+    <h2>🧪 Placebo Test</h2>
+    <img src="figures/fig1_event_study.png" alt="Event Study Placebo">
+  </div>
+
+  <div class="section">
+    <h2>📐 Covariate Balance</h2>
+    <img src="figures/fig2_smd_prematch.png" alt="Standardized Mean Differences Pre-Match">
+    <img src="figures/fig2_smd_balance.png" alt="Standardized Mean Differences After Matching">
+  </div>
+
+  <div class="section">
+    <h2>📈 Counterfactual Analysis</h2>
+    <img src="figures/fig3_bsts_counterfactual.png" alt="Counterfactual vs Observed">
+    <p><a href="results/causalimpact_summary.txt">📝 View Summary Text</a></p>
+    <p><a href="figures/CAUSAL%20IMPACT.pdf">📄 Download Full PDF Report</a></p>
+  </div>
+
+</body>
+</html><h2>Causal Impact Analysis</h2>
 <ul>
   <li><a href="figures/fig_causalimpact.png">📊 Counterfactual Plot</a></li>
   <li><a href="results/causalimpact_summary.txt">📄 CausalImpact Summary</a></li>
