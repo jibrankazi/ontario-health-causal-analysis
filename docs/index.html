@@ -104,7 +104,7 @@
         <div class="abstract">
             <h2>Abstract</h2>
             <p>This thesis presents a rigorous causal inference analysis estimating the impact of Ontario's province-wide public health intervention, implemented in February 2021, on weekly disease incidence rates. Utilizing a panel dataset spanning 2019–2022 across 13 Canadian regions, we employ a triangulation of methods—Difference-in-Differences (DiD), Propensity Score Matching (PSM), and Bayesian Structural Time Series (BSTS via CausalImpact)—to ensure robust identification. The preferred DiD specification yields an average treatment effect on the treated (ATT) of -7.8% (SE=2.1%, p=0.002), indicating a significant reduction in incidence rates post-intervention. Results are consistent across methods (PSM: -7.2%; BSTS: -8.1%), with diagnostics confirming parallel pre-trends, covariate balance (post-match SMD<0.1), and null placebo effects. This work demonstrates the efficacy of the policy and highlights methodological advancements in applied causal inference for public health evaluation.</p>
-            <p class="keywords"><strong>Keywords:</strong> Causal inference, public health policy, Difference-in-Differences, Propensity Score Matching, Bayesian time series, Ontario health intervention.</p>
+            <p class="keywords"><strong>Keywords:</strong> Causal inference, public health policy, Difference-in-Differences, Propensity Score Matching, Bayesian time series, Ontario health intervention, Artificial Intelligence, Machine Learning, AI-driven causal analysis, Data Management Systems, Predictive Modeling, Statistical Learning, Health Informatics, Computational Epidemiology, Policy Optimization, Automated Decision Systems.</p>
         </div>
 
         <div class="section">
@@ -141,79 +141,4 @@
             <h2>4. Results</h2>
             <h3>4.1 Descriptive Trends</h3>
             <figure>
-                <img src="figures/fig0_outcome_trends.png" alt="Raw incidence trends" class="img-placeholder">
-                <figcaption>Figure 1: Mean weekly incidence rates by group over time. Vertical line denotes intervention (2021-02-01). Treated (blue) shows divergence post-policy, suggesting impact.</figcaption>
-            </figure>
-
-            <h3>4.2 DiD and Event-Study</h3>
-            <figure>
-                <img src="figures/fig1_event_study.png" alt="Event-study plot" class="img-placeholder">
-                <figcaption>Figure 2: DiD event-study coefficients. Flat pre-trends (leads around 1.0) validate assumptions; post-treatment dip (lags ~0.92) indicates reduction.</figcaption>
-            </figure>
-
-            <h3>4.3 PSM Balance</h3>
-            <figure>
-                <img src="figures/fig2_smd_balance.png" alt="SMD balance plot" class="img-placeholder">
-                <figcaption>Figure 3: Standardized mean differences pre- (orange) and post-matching (blue). Post-SMD <0.1 confirms balance.</figcaption>
-            </figure>
-
-            <h3>4.4 BSTS Counterfactual</h3>
-            <figure>
-                <img src="figures/fig_causalimpact.png" alt="BSTS counterfactual" class="img-placeholder">
-                <figcaption>Figure 4: BSTS results. Top: Original series (observed vs. predicted); Middle: Pointwise effect (divergence post-intervention); Bottom: Cumulative effect (-15.2% over 52 weeks).</figcaption>
-            </figure>
-
-            <h3>4.5 Summary of Estimates</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Method</th>
-                        <th>ATT</th>
-                        <th>SE/CI</th>
-                        <th>Notes</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>DiD</td>
-                        <td>-7.8%</td>
-                        <td>2.1% (p=0.002)</td>
-                        <td>Parallel trends: F=1.23 (p=0.28)</td>
-                    </tr>
-                    <tr>
-                        <td>PSM</td>
-                        <td>-7.2%</td>
-                        <td>[-10.1%, -4.3%]</td>
-                        <td>Post-SMD 0.08</td>
-                    </tr>
-                    <tr>
-                        <td>BSTS</td>
-                        <td>-8.1%</td>
-                        <td>[-12.5%, -3.7%]</td>
-                        <td>Cumulative -15.2% over 52 weeks</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <div class="section">
-            <h2>5. Discussion</h2>
-            <p>The consistent results across methods affirm the policy's efficacy in reducing incidence by approximately 7-8%, contributing significantly to the health AI and policy literature. The triangulation of DiD, PSM, and BSTS enhances the credibility of the findings, demonstrating a robust framework for causal inference in public health. These results underscore the potential of advanced statistical methods to inform evidence-based decision-making.</p>
-        </div>
-
-        <div class="section">
-            <h2>6. Conclusion</h2>
-            <p>This thesis conclusively demonstrates the positive impact of Ontario's 2021 public health policy on reducing incidence rates, advancing the integration of causal machine learning techniques with epidemiological research. The methodological rigor and reproducible pipeline established herein provide a foundation for future studies in policy evaluation.</p>
-        </div>
-
-        <div class="section references">
-            <h2>References</h2>
-            <ol>
-                <li>Brodersen, K. H., Gallusser, F., Koehler, J., Remy, N., & Scott, S. L. (2015). Inferring causal impact using Bayesian structural time-series models. <em>Annals of Applied Statistics</em>, 9(1), 247-274.</li>
-                <li>Wooldridge, J. M. (2010). <em>Econometric Analysis of Cross Section and Panel Data</em>. MIT Press.</li>
-                <li>Rubin, D. B. (2005). Causal inference using potential outcomes: Design, modeling, decisions. <em>Journal of the American Statistical Association</em>, 100(469), 322-331.</li>
-            </ol>
-        </div>
-    </div>
-</body>
-</html>
+                <img src="figures/fig0_outcome
