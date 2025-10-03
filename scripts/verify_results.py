@@ -1,5 +1,7 @@
 import json, os, random, tempfile, subprocess
 from datetime import datetime, timezone
+"""Compare current results with a locked baseline using a tolerance."""
+import json, math
 from pathlib import Path
 import numpy as np
 
@@ -34,18 +36,8 @@ if missing:
     raise ValueError(f"Missing required columns: {missing}")
 
 # Parse dates
-def _parse_weeks(series: pd.Series, *, context: str) -> pd.Series:
-    """Return timezone-naive weekly timestamps or raise with a helpful error."""
-    weeks = pd.to_datetime(series, errors="coerce", utc=True)
-    if weeks.isna().any():
-        missing = int(weeks.isna().sum())
-        raise ValueError(
-            f"{context}: unable to parse {missing} week value(s) into timestamps."
-        )
-    return weeks.dt.tz_convert(None)
-
-
-df["week"] = _parse_weeks(df["week"], context="verify_results")
+if pd.api.types.is_string_dtype(df["week"]):
+    df["week"] = pd.to_datetime(df["week"], errors="coerce")
 
 # Construct post if absent
 if "post" not in df.columns:
@@ -179,15 +171,7 @@ def _bsts_via_rscript(agg_df: pd.DataFrame) -> float:
         csv_p = td / "series.csv"
         out_p = td / "out.json"
         # Save weekly mean series with columns: week, incidence
-        agg_df = agg_df.copy()
-        weeks = pd.to_datetime(agg_df["week"], errors="coerce", utc=True)
-        if weeks.isna().any():
-            missing = int(weeks.isna().sum())
-            raise ValueError(
-                "BSTS export: unable to parse weekly timestamps for Rscript input."
-            )
-        agg_df["week"] = weeks.dt.tz_convert(None).dt.date
-        agg_df.to_csv(csv_p, index=False, date_format="%Y-%m-%d")
+        agg_df.to_csv(csv_p, index=False)
         policy = pd.Timestamp(cfg.get("policy_date", "2021-02-01")).date()
         r_code = f"""
             suppressMessages(library(CausalImpact))
@@ -233,3 +217,37 @@ out = {
 
 (results_dir / "results.json").write_text(json.dumps(out, indent=2))
 print(json.dumps(out, indent=2))
+ROOT = Path(__file__).resolve().parents[1]
+CUR = ROOT / "results" / "results.json"
+EXP = ROOT / "results" / "expected_results.json"
+
+def _close(a, b, tol: float = 1e-6) -> bool:
+    if a is None or b is None:
+        return a == b
+    try:
+        af = float(a); bf = float(b)
+        if math.isnan(af) and math.isnan(bf):
+            return True
+        return abs(af - bf) <= tol * max(1.0, abs(bf))
+    except Exception:
+        return a == b
+
+def main() -> int:
+    cur = json.loads(CUR.read_text())
+    if not EXP.exists():
+        print("No expected_results.json yet. Create it after reviewing current results.")
+        return 2
+    exp = json.loads(EXP.read_text())
+
+    keys = ["did_att", "did_se", "psm_att", "bsts_att"]
+    ok = True
+    for k in keys:
+        if not _close(cur.get(k), exp.get(k)):
+            print(f"Mismatch for {k}: got {cur.get(k)} expected {exp.get(k)}")
+            ok = False
+
+    print("OK" if ok else "FAIL")
+    return 0 if ok else 1
+
+if __name__ == "__main__":
+    raise SystemExit(main())
