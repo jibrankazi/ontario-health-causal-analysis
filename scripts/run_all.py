@@ -34,8 +34,18 @@ if missing:
     raise ValueError(f"Missing required columns: {missing}")
 
 # Parse dates
-if pd.api.types.is_string_dtype(df["week"]):
-    df["week"] = pd.to_datetime(df["week"], errors="coerce")
+def _parse_weeks(series: pd.Series, *, context: str) -> pd.Series:
+    """Return timezone-naive weekly timestamps or raise with a helpful error."""
+    weeks = pd.to_datetime(series, errors="coerce", utc=True)
+    if weeks.isna().any():
+        missing = int(weeks.isna().sum())
+        raise ValueError(
+            f"{context}: unable to parse {missing} week value(s) into timestamps."
+        )
+    return weeks.dt.tz_convert(None)
+
+
+df["week"] = _parse_weeks(df["week"], context="run_all")
 
 # Construct post if absent
 if "post" not in df.columns:
@@ -169,7 +179,15 @@ def _bsts_via_rscript(agg_df: pd.DataFrame) -> float:
         csv_p = td / "series.csv"
         out_p = td / "out.json"
         # Save weekly mean series with columns: week, incidence
-        agg_df.to_csv(csv_p, index=False)
+        agg_df = agg_df.copy()
+        weeks = pd.to_datetime(agg_df["week"], errors="coerce", utc=True)
+        if weeks.isna().any():
+            missing = int(weeks.isna().sum())
+            raise ValueError(
+                "BSTS export: unable to parse weekly timestamps for Rscript input."
+            )
+        agg_df["week"] = weeks.dt.tz_convert(None).dt.date
+        agg_df.to_csv(csv_p, index=False, date_format="%Y-%m-%d")
         policy = pd.Timestamp(cfg.get("policy_date", "2021-02-01")).date()
         r_code = f"""
             suppressMessages(library(CausalImpact))
