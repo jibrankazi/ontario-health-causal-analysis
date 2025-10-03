@@ -1,42 +1,52 @@
-import json, os, random
+import json, os, random, tempfile, subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 import numpy as np
 
-# --- Determinism ---
+# ---------------------------
+# Determinism
+# ---------------------------
 os.environ["PYTHONHASHSEED"] = "0"
 random.seed(42)
 np.random.seed(42)
 
-# --- Config ---
+# ---------------------------
+# Config / Paths
+# ---------------------------
 import yaml
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1]  # project root (src/..)
 cfg = yaml.safe_load((ROOT / "config.yaml").read_text())
 
 data_path = ROOT / cfg.get("data_path", "data/ontario_cases.csv")
 results_dir = ROOT / "results"
 results_dir.mkdir(parents=True, exist_ok=True)
 
-# --- Load data ---
+# ---------------------------
+# Load Data
+# ---------------------------
 import pandas as pd
 df = pd.read_csv(data_path)
 
-# expected columns
+# Expected columns
 required = {"week", "region", "incidence", "treated"}
 missing = required - set(df.columns)
 if missing:
     raise ValueError(f"Missing required columns: {missing}")
 
-# parse dates
+# Parse dates
 if pd.api.types.is_string_dtype(df["week"]):
     df["week"] = pd.to_datetime(df["week"], errors="coerce")
 
+# Construct post if absent
 if "post" not in df.columns:
     policy_date = pd.Timestamp(cfg.get("policy_date", "2021-02-01"))
     df["post"] = (df["week"] >= policy_date).astype(int)
 
-# --- DiD ---
+# ---------------------------
+# Difference-in-Differences
+# ---------------------------
 import statsmodels.formula.api as smf
+
 df["treat_post"] = df["treated"] * df["post"]
 did = smf.ols("incidence ~ C(region) + C(week) + treat_post", data=df).fit(
     cov_type="cluster", cov_kwds={"groups": df["region"]}
@@ -44,7 +54,9 @@ did = smf.ols("incidence ~ C(region) + C(week) + treat_post", data=df).fit(
 did_att = float(did.params.get("treat_post", float("nan")))
 did_se  = float(did.bse.get("treat_post", float("nan")))
 
-# --- PSM (robust) ---
+# ---------------------------
+# Propensity Score Matching (robust)
+# ---------------------------
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import NearestNeighbors
 
@@ -54,14 +66,13 @@ psm_diag = {}
 
 try:
     pre = df[df["post"] == 0].copy()
-    # covariates: all numeric columns except keys/outcomes
-    drop_cols = {"week","region","incidence","treated","post","treat_post"}
+
+    # Covariates: all numeric columns except keys/outcomes
+    drop_cols = {"week", "region", "incidence", "treated", "post", "treat_post"}
     covars = [c for c in pre.columns if c not in drop_cols and pd.api.types.is_numeric_dtype(pre[c])]
     if not covars:
-        # fallback—use pre-period incidence as a covariate
-        covars = ["incidence"]
+        covars = ["incidence"]  # fallback
 
-    # must have both treated & control in pre
     n_treat = int(pre["treated"].sum())
     n_ctrl  = int((1 - pre["treated"]).sum())
     psm_diag.update(n_treat_pre=n_treat, n_ctrl_pre=n_ctrl, covars=covars)
@@ -77,7 +88,7 @@ try:
     lr.fit(X, y)
     pre["ps"] = lr.predict_proba(X)[:, 1]
 
-    # common support
+    # Common support
     ps_t = pre.loc[pre["treated"] == 1, "ps"]
     ps_c = pre.loc[pre["treated"] == 0, "ps"]
     overlap_low  = max(ps_t.min(), ps_c.min())
@@ -88,9 +99,8 @@ try:
         psm_reason = "No common support in propensity scores; skipping PSM."
         raise RuntimeError(psm_reason)
 
-    # restrict to common support
-    in_support = pre["ps"].between(overlap_low, overlap_high, inclusive="both")
-    pre_cs = pre[in_support].copy()
+    # Restrict to support
+    pre_cs = pre[pre["ps"].between(overlap_low, overlap_high, inclusive="both")].copy()
     n_treat_cs = int(pre_cs["treated"].sum())
     n_ctrl_cs  = int((1 - pre_cs["treated"]).sum())
     psm_diag.update(n_treat_pre_cs=n_treat_cs, n_ctrl_pre_cs=n_ctrl_cs)
@@ -99,46 +109,38 @@ try:
         psm_reason = "Common-support filter removed all treated or control units; skipping PSM."
         raise RuntimeError(psm_reason)
 
-    # caliper = 0.2 * std(logit(ps))
+    # Caliper based on 0.2 * SD(logit(ps))
     eps = 1e-6
     logit = np.log(np.clip(pre_cs["ps"], eps, 1 - eps)) - np.log(1 - np.clip(pre_cs["ps"], eps, 1 - eps))
     caliper = 0.2 * float(np.nanstd(logit))
     psm_diag.update(caliper=caliper)
 
-    # fit NN on controls (with replacement)
+    # 1-NN with replacement on controls
     controls = pre_cs[pre_cs["treated"] == 0].copy()
     treats   = pre_cs[pre_cs["treated"] == 1].copy()
     nn = NearestNeighbors(n_neighbors=1, metric="euclidean")
     nn.fit(controls[["ps"]].to_numpy())
     dist, idx = nn.kneighbors(treats[["ps"]].to_numpy())
-    dist = dist.flatten()
-    idx  = idx.flatten()
+    dist = dist.flatten(); idx = idx.flatten()
 
-    # apply caliper in ps scale (approx via logit sd; use a conservative ps-width)
-    # translate caliper on logit to approximate ps band around each treated ps:
-    # For simplicity, reject if |ps_t - ps_c| > 0.1 (fallback if caliper very small)
+    # Simple ps-scale caliper gate (pragmatic bound)
     ps_pairs = []
     for i, j in enumerate(idx):
-        ps_t = float(treats["ps"].iloc[i])
-        ps_c = float(controls["ps"].iloc[j])
-        if abs(ps_t - ps_c) <= max(0.1, caliper * 0.25):  # pragmatic bound
+        ps_ti = float(treats["ps"].iloc[i]); ps_ci = float(controls["ps"].iloc[j])
+        if abs(ps_ti - ps_ci) <= max(0.1, caliper * 0.25):
             ps_pairs.append((treats.iloc[i], controls.iloc[j]))
 
     psm_diag.update(n_matched=len(ps_pairs))
-
     if len(ps_pairs) == 0:
         psm_reason = "No matches within caliper; skipping PSM."
         raise RuntimeError(psm_reason)
 
-    # compute post-period ATT using matched sets (with replacement)
+    # Post-period ATT using matched sets
     post = df[df["post"] == 1].copy()
-    # average post outcome per region
     post_mean = post.groupby("region", as_index=True)["incidence"].mean()
-
     diffs = []
     for t_row, c_row in ps_pairs:
-        t_reg = t_row["region"]
-        c_reg = c_row["region"]
+        t_reg = t_row["region"]; c_reg = c_row["region"]
         if t_reg in post_mean.index and c_reg in post_mean.index:
             diffs.append(float(post_mean.loc[t_reg] - post_mean.loc[c_reg]))
     if len(diffs) == 0:
@@ -146,36 +148,60 @@ try:
         raise RuntimeError(psm_reason)
 
     psm_att = float(np.mean(diffs))
-
 except Exception:
-    # leave psm_att as None; add reason
+    # leave psm_att as None; reason is recorded below
     pass
 
-# --- BSTS (optional; OK to skip if rpy2/R not installed) ---
+# ---------------------------
+# BSTS / CausalImpact via Rscript (Windows-friendly)
+# ---------------------------
 bsts_att = None
 bsts_reason = None
-try:
-    import rpy2.robjects as ro
-    ro.r('suppressMessages(library(CausalImpact))')
-    agg = df.sort_values("week").groupby("week")["incidence"].mean().reset_index()
-    pre_end = agg[agg["week"] < pd.Timestamp(cfg.get("policy_date", "2021-02-01"))]["week"].max()
-    post_end = agg["week"].max()
-    from rpy2.robjects import pandas2ri
-    pandas2ri.activate()
-    r_df = pandas2ri.py2rpy(agg)
-    ro.globalenv["dat"] = r_df
-    ro.globalenv["pre_end"] = ro.r(f'as.Date("{pre_end.date()}")')
-    ro.globalenv["post_end"] = ro.r(f'as.Date("{post_end.date()}")')
-    ci = ro.r('CausalImpact(dat$incidence, c(min(dat$week), pre_end), c(pre_end+1, post_end))')
-    bsts_att = float(ro.r('as.numeric(ci$summary$AbsEffect["Average"])')[0])
-except Exception as e:
-    bsts_reason = "R/rpy2 or CausalImpact not available, or failed to run."
 
-# --- Save results ---
+def _bsts_via_rscript(agg_df: pd.DataFrame) -> float:
+    """
+    Run CausalImpact in an Rscript subprocess and return the
+    average absolute effect (bsts_att).
+    Requires Rscript on PATH and packages: CausalImpact, bsts, Boom, BoomSpikeSlab, zoo.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        csv_p = td / "series.csv"
+        out_p = td / "out.json"
+        # Save weekly mean series with columns: week, incidence
+        agg_df.to_csv(csv_p, index=False)
+        policy = pd.Timestamp(cfg.get("policy_date", "2021-02-01")).date()
+        r_code = f"""
+            suppressMessages(library(CausalImpact))
+            suppressMessages(library(jsonlite))
+            dat <- read.csv("{csv_p.as_posix()}")
+            dat$week <- as.Date(dat$week)
+            pre_end  <- as.Date("{policy}") - 1
+            post_end <- max(dat$week, na.rm=TRUE)
+            ci <- CausalImpact(dat$incidence, c(min(dat$week, na.rm=TRUE), pre_end), c(pre_end+1, post_end))
+            res <- list(bsts_att = as.numeric(ci$summary$AbsEffect["Average"]))
+            write(jsonlite::toJSON(res, auto_unbox=TRUE), "{out_p.as_posix()}")
+        """
+        r_script = td / "run_ci.R"
+        r_script.write_text(r_code)
+        subprocess.check_call(["Rscript", r_script.as_posix()])
+        out = json.loads(out_p.read_text())
+        return float(out["bsts_att"])
+
+try:
+    # Aggregate to weekly mean incidence for univariate CausalImpact
+    agg = df.sort_values("week").groupby("week", as_index=False)["incidence"].mean()
+    bsts_att = _bsts_via_rscript(agg)
+except Exception as e:
+    bsts_reason = f"BSTS via Rscript failed: {e}"
+
+# ---------------------------
+# Save & Print Results
+# ---------------------------
 out = {
     "did_att": did_att,
     "did_se": did_se,
-    "psm_att": (None if psm_att is None or (isinstance(psm_att, float) and (np.isnan(psm_att))) else float(psm_att)),
+    "psm_att": (None if psm_att is None or (isinstance(psm_att, float) and np.isnan(psm_att)) else float(psm_att)),
     "bsts_att": bsts_att,
     "meta": {
         "psm_reason": psm_reason,
@@ -186,5 +212,6 @@ out = {
     },
     "timestamp": datetime.now(timezone.utc).isoformat(),
 }
+
 (results_dir / "results.json").write_text(json.dumps(out, indent=2))
 print(json.dumps(out, indent=2))
