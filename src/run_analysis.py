@@ -1,4 +1,3 @@
-cat > scripts/run_all.py <<'PY'
 import json, os, random, tempfile, subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -136,21 +135,6 @@ except Exception:
 bsts_att = None
 bsts_reason = None
 
-def try_rpy2_path(agg: pd.DataFrame):
-    import rpy2.robjects as ro
-    from rpy2.robjects import pandas2ri
-    ro.r('suppressMessages(library(CausalImpact))')
-    pandas2ri.activate()
-    r_df = pandas2ri.py2rpy(agg)
-    ro.globalenv["dat"] = r_df
-    policy = pd.Timestamp(cfg.get("policy_date", "2021-02-01"))
-    pre_end = agg[agg["week"] < policy]["week"].max()
-    post_end = agg["week"].max()
-    ro.globalenv["pre_end"] = ro.r(f'as.Date("{pre_end.date()}")')
-    ro.globalenv["post_end"] = ro.r(f'as.Date("{post_end.date()}")')
-    ci = ro.r('CausalImpact(dat$incidence, c(min(dat$week), pre_end), c(pre_end+1, post_end))')
-    return float(ro.r('as.numeric(ci$summary$AbsEffect["Average"])')[0])
-
 def try_rscript_path(agg: pd.DataFrame):
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
@@ -177,12 +161,9 @@ def try_rscript_path(agg: pd.DataFrame):
 
 try:
     agg = df.sort_values("week").groupby("week", as_index=False)["incidence"].mean()
-    try:
-        bsts_att = try_rpy2_path(agg)
-    except Exception:
-        bsts_att = try_rscript_path(agg)
+    bsts_att = try_rscript_path(agg)
 except Exception as e:
-    bsts_reason = "BSTS via rpy2/Rscript failed: " + str(e)
+    bsts_reason = "BSTS via Rscript failed: " + str(e)
 
 # --- Save results ---
 out = {
@@ -201,4 +182,3 @@ out = {
 }
 (results_dir / "results.json").write_text(json.dumps(out, indent=2))
 print(json.dumps(out, indent=2))
-PY
