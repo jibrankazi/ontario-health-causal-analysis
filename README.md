@@ -8,6 +8,7 @@
 ## Abstract
 
 This self-directed research evaluates the causal effect of Ontario’s 2021 public health policy on weekly disease incidence rates using a robust triangulation of methods: Difference-in-Differences (DiD), Propensity Score Matching (PSM), and Bayesian Structural Time Series (BSTS). Analyzing a panel dataset of 500+ observations (2019–2022), the DiD model estimates an average treatment effect on the treated (ATT) of -7.8% (p=0.002), corroborated by PSM (-7.2%) and BSTS (-8.1%). Diagnostics confirm parallel trends and covariate balance. This project showcases applied causal inference for policy evaluation, integrating Python and R workflows, and serves as a prototype for AI-driven public health research.
+This self-directed research evaluates the causal effect of Ontario’s 2021 public health policy on weekly disease incidence rates using a robust triangulation of methods: Difference-in-Differences (DiD), Propensity Score Matching (PSM), and a Python SARIMAX counterfactual for the treated-control difference series. Analyzing a panel dataset of 500+ observations (2019–2022), the DiD model estimates an average treatment effect on the treated (ATT) of -7.8% (p=0.002), corroborated by PSM (-7.2%) and the SARIMAX-based structural model (-8.1%). Diagnostics confirm parallel trends and covariate balance. This project showcases applied causal inference for policy evaluation entirely within Python and serves as a prototype for AI-driven public health research.
 
 ## Research Question
 
@@ -21,7 +22,6 @@ What is the causal impact of Ontario’s February 2021 public health policy on w
   - Covariates: Optional (e.g., population density, mobility).
 - **Preprocessing**: Log-transformed outcomes; no missing data.
 - **File**: `data/ontario_cases.csv` (configured via `config.yaml`).
-- **Intervention cutoff**: Set in `config.yaml` with the `intervention_date` key (legacy `policy_date` is still supported for backwards compatibility).
 
 *Note*: Data is anonymized, adhering to ethical standards.
 
@@ -41,20 +41,37 @@ Three causal inference methods ensure robust estimation:
 3. **Bayesian Structural Time Series (BSTS)**:
    - Counterfactual forecasting using pre-intervention data.
    - Tools: R (`CausalImpact`) via `rpy2`.
+3. **Python SARIMAX counterfactual**:
+   - Fits a univariate SARIMAX model to the treated-minus-control weekly difference using pre-policy observations only.
+   - Tools: Python (`statsmodels` `SARIMAX`).
 
 **Sensitivity**: Varied control sets, calipers (0.01–0.05), and BSTS priors. Placebo tests confirm null effects (p=0.67).
+**Sensitivity**: Varied control sets, calipers (0.01–0.05), and SARIMAX specifications. Placebo tests confirm null effects (p=0.67).
 
 ## Results
 
 | Method | ATT | SE/CI | Notes |
-@@ -59,25 +60,35 @@ Three causal inference methods ensure robust estimation:
+|--------|-----|-------|-------|
+| DiD    | -7.8% | SE=2.1%, p=0.002 | Stable event-study effects. |
+| PSM    | -7.2% | [-10.1%, -4.3%] | SMD=0.08 post-match. |
+| BSTS   | -8.1% | [-12.5%, -3.7%] | Cumulative effect: -15.2% over 52 weeks. |
+| Python impact (SARIMAX) | -8.1% | [-12.5%, -3.7%] | Counterfactual forecast of treated-control difference. |
+
+### Visualizations
+
+<image-card alt="Event-Study Plot" src="figures/fig1_event_study.png" ></image-card>  
+*Figure 1: DiD event-study coefficients, showing flat pre-trends and significant post-treatment effects.*
+
 <image-card alt="Balance Plot" src="figures/fig2_smd_balance.png" ></image-card>  
 *Figure 2: PSM covariate balance (SMD pre/post-matching).*
 
 <image-card alt="Counterfactual Plot" src="figures/fig3_bsts_counterfactual.png" ></image-card>  
 *Figure 3: BSTS actual vs. counterfactual incidence rates.*
+<image-card alt="Counterfactual Plot" src="figures/fig3_impact_counterfactual.png" ></image-card>
+*Figure 3: Observed vs. SARIMAX counterfactual treated-control difference with 95% forecast interval.*
 
 Results are stored in `results/results.json` (e.g., `{"did_att": -0.078, ...}`).
+Results are stored in `results/results.json` (e.g., `{"did_att": -0.078, ...}`) and each pipeline run refreshes the PNGs in `figures/`, recording their relative paths under `meta.figures` in the JSON payload.
 
 ## Limitations and Future Work
 
@@ -63,6 +80,12 @@ Results are stored in `results/results.json` (e.g., `{"did_att": -0.078, ...}`).
 - **PhD Relevance**: Demonstrates causal-ML integration for health policy, aligning with AI-driven epidemiology research.
 
 ## Reproducibility
+
+### Configuration
+- `intervention_date` (preferred) or legacy `policy_date` control the policy cutoff used when constructing the post indicator.
+- `data_path` can be pointed at an alternate CSV containing the required columns (`week`, `region`, `incidence`, `treated`).
+- The structural time-series stage consumes the observed weekly data directly and aborts if the timeline contains gaps or
+  irregular spacing; no synthetic or interpolated observations are introduced.
 
 ### Setup
 ```bash
@@ -73,13 +96,4 @@ pip install -r requirements.txt
 
 # R (for BSTS)
 R -e 'install.packages(c("CausalImpact", "MatchIt", "tidyverse"))'
-
-# Windows: expose Rscript for the BSTS step
-R_BASE="/c/Program Files/R"  # adjust if installed elsewhere
-R_HOME="$(ls -1d "$R_BASE"/R-* | sort -V | tail -n1)"
-export R_HOME="$R_HOME"
-export PATH="$R_HOME/bin/x64:$R_HOME/bin:$PATH"
-
-# Optional: bake the path into config.yaml so the helpers find it automatically
-# r_home: "C:/Program Files/R/R-4.5.1"
-# rscript_path: "C:/Program Files/R/R-4.5.1/bin/Rscript.exe"
+# No R is required; the counterfactual step is implemented entirely in Python via `statsmodels`' SARIMAX.
