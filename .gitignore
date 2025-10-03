@@ -24,3 +24,5 @@ figures/*
 .DS_Store
 Thumbs.db
 /NUL
+
+results/results.json
