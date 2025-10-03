@@ -6,4 +6,4 @@ cd "$ROOT_DIR"
 
 python -u src/run_analysis.py
 
-cat results/results.jso
+cat results/results.json
