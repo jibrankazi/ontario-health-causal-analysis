@@ -2,32 +2,28 @@ import json, os, random, tempfile, subprocess
 import json
 import os
 import random
-import subprocess
 import sys
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd
 import statsmodels.formula.api as smf
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import NearestNeighbors
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from shared import (  # type: ignore after dynamic path tweak
-    ROOT as PROJECT_ROOT,
-    load_config,
-    resolve_intervention_date,
-    resolve_rscript,
-)
+from figures import generate_analysis_figures  # noqa: E402
+from shared import ROOT as PROJECT_ROOT, load_config, resolve_intervention_date  # noqa: E402
 
 # ---------------------------
 # Determinism
 # ---------------------------
+# --- Determinism -----------------------------------------------------------
 os.environ["PYTHONHASHSEED"] = "0"
 random.seed(42)
 np.random.seed(42)
@@ -67,16 +63,17 @@ policy_date = resolve_intervention_date(cfg)
 if "post" not in df.columns:
     policy_date = pd.Timestamp(cfg.get("policy_date", "2021-02-01"))
     df["post"] = (df["week"] >= policy_date).astype(int)
-
-# ---------------------------
-# Difference-in-Differences
-# ---------------------------
-import statsmodels.formula.api as smf
 else:
     inferred = pd.Timestamp(df.loc[df["post"] == 1, "week"].min())
     if not pd.isna(inferred):
         policy_date = inferred
 
+# ---------------------------
+# Difference-in-Differences
+# ---------------------------
+import statsmodels.formula.api as smf
+
+# --- Difference-in-Differences --------------------------------------------
 df["treat_post"] = df["treated"] * df["post"]
 did = smf.ols("incidence ~ C(region) + C(week) + treat_post", data=df).fit(
     cov_type="cluster", cov_kwds={"groups": df["region"]}
@@ -112,9 +109,12 @@ except Exception as exc:  # pragma: no cover - defensive
     did_att = float("nan")
     did_se = float("nan")
 
+# --- Propensity Score Matching --------------------------------------------
 psm_att: float | None = None
 psm_reason: str | None = None
 psm_diag: dict[str, Any] = {}
+matched_treated_df: pd.DataFrame | None = None
+matched_control_df: pd.DataFrame | None = None
 
 pre = df[df["post"] == 0].copy()
 drop_cols = {"week", "region", "incidence", "treated", "post", "treat_post"}
@@ -187,20 +187,32 @@ try:
     # Simple ps-scale caliper gate (pragmatic bound)
     ps_pairs = []
     ps_pairs: list[tuple[pd.Series, pd.Series]] = []
+    matched_treated_rows: list[pd.Series] = []
+    matched_control_rows: list[pd.Series] = []
     for i, j in enumerate(idx):
         ps_ti = float(treats["ps"].iloc[i]); ps_ci = float(controls["ps"].iloc[j])
         if abs(ps_ti - ps_ci) <= max(0.1, caliper * 0.25):
-        if dist[i] <= caliper_limit_ps:
             ps_pairs.append((treats.iloc[i], controls.iloc[j]))
 
     psm_diag.update(n_matched=len(ps_pairs))
     if len(ps_pairs) == 0:
+        if dist[i] <= caliper_limit_ps:
+            treated_row = treats.iloc[i]
+            control_row = controls.iloc[j]
+            ps_pairs.append((treated_row, control_row))
+            matched_treated_rows.append(treated_row)
+            matched_control_rows.append(control_row)
+
     psm_diag["n_matched"] = len(ps_pairs)
     if not ps_pairs:
         psm_reason = "No matches within caliper; skipping PSM."
         raise RuntimeError(psm_reason)
 
     # Post-period ATT using matched sets
+    if matched_treated_rows and matched_control_rows:
+        matched_treated_df = pd.DataFrame(matched_treated_rows)
+        matched_control_df = pd.DataFrame(matched_control_rows)
+
     post = df[df["post"] == 1].copy()
     post_mean = post.groupby("region", as_index=True)["incidence"].mean()
     diffs = []
@@ -236,15 +248,6 @@ def _bsts_via_rscript(agg_df: pd.DataFrame) -> float:
     average absolute effect (bsts_att).
     Requires Rscript on PATH and packages: CausalImpact, bsts, Boom, BoomSpikeSlab, zoo.
     """
-except Exception as exc:
-    if not psm_reason:
-        psm_reason = f"PSM failed due to an unexpected error: {exc}"
-
-bsts_att: float | None = None
-bsts_reason: str | None = None
-
-
-def _bsts_via_rscript(agg: pd.DataFrame) -> float | None:
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         csv_p = td / "series.csv"
@@ -252,60 +255,120 @@ def _bsts_via_rscript(agg: pd.DataFrame) -> float | None:
         # Save weekly mean series with columns: week, incidence
         agg_df.to_csv(csv_p, index=False)
         policy = pd.Timestamp(cfg.get("policy_date", "2021-02-01")).date()
-        temp_dir = Path(td)
-        csv_path = temp_dir / "series.csv"
-        out_path = temp_dir / "out.json"
-
-        series = agg.copy()
-        if pd.api.types.is_datetime64_any_dtype(series["week"]):
-            series["week"] = series["week"].dt.date
-        series = series[["week", "incidence"]].dropna()
-        series.to_csv(csv_path, index=False)
-
-        policy_str = policy_date.date().isoformat()
         r_code = f"""
             suppressMessages(library(CausalImpact))
             suppressMessages(library(jsonlite))
             dat <- read.csv("{csv_p.as_posix()}")
-            suppressMessages(library(zoo))
-
-            dat <- read.csv("{csv_path.as_posix()}")
             dat$week <- as.Date(dat$week)
             pre_end  <- as.Date("{policy}") - 1
             post_end <- max(dat$week, na.rm=TRUE)
             ci <- CausalImpact(dat$incidence, c(min(dat$week, na.rm=TRUE), pre_end), c(pre_end+1, post_end))
             res <- list(bsts_att = as.numeric(ci$summary$AbsEffect["Average"]))
             write(jsonlite::toJSON(res, auto_unbox=TRUE), "{out_p.as_posix()}")
-            dat$incidence <- as.numeric(dat$incidence)
-
-            ts <- zoo(dat$incidence, order.by = dat$week)
-
-            pre_start  <- min(index(ts))
-            pre_end    <- as.Date("{policy_str}") - 1
-            post_start <- pre_end + 1
-            post_end   <- max(index(ts))
-
-            ci <- CausalImpact(ts, c(pre_start, pre_end), c(post_start, post_end))
-
-            att <- suppressWarnings(as.numeric(ci$summary$AbsEffect["Average"]))
-            if (is.na(att)) att_json <- NULL else att_json <- att
-
-            res <- list(bsts_att = att_json)
-            write(jsonlite::toJSON(res, auto_unbox = TRUE, na = "null"), "{out_path.as_posix()}")
         """
         r_script = td / "run_ci.R"
-        r_script = temp_dir / "run_ci.R"
         r_script.write_text(r_code)
         subprocess.check_call(["Rscript", r_script.as_posix()])
         out = json.loads(out_p.read_text())
         return float(out["bsts_att"])
+except Exception as exc:
+    if not psm_reason:
+        psm_reason = f"PSM failed due to an unexpected error: {exc}"
 
-        rscript_exec = resolve_rscript(cfg)
-        subprocess.check_call([rscript_exec, r_script.as_posix()])
+# --- Python SARIMAX counterfactual ---------------------------------------
+impact_att: float | None = None
+impact_ci: tuple[float | None, float | None] = (None, None)
+impact_reason: str | None = None
+impact_series: list[Mapping[str, Any]] | None = None
 
-        payload = json.loads(out_path.read_text())
-        val = payload.get("bsts_att")
-        return None if val is None else float(val)
+
+def _estimate_impact_sarimax(panel: pd.DataFrame, policy_date: pd.Timestamp):
+    weekly = panel.copy()
+    weekly["week"] = pd.to_datetime(weekly["week"], errors="coerce")
+    weekly = weekly.dropna(subset=["week"])
+
+    treated = (
+        weekly[weekly["treated"] == 1]
+        .groupby("week", as_index=False)["incidence"]
+        .mean()
+        .rename(columns={"incidence": "t"})
+    )
+    control = (
+        weekly[weekly["treated"] == 0]
+        .groupby("week", as_index=False)["incidence"]
+        .mean()
+        .rename(columns={"incidence": "c"})
+    )
+
+    series = pd.merge(treated, control, on="week", how="inner").dropna()
+    series = series.sort_values("week").reset_index(drop=True)
+    if series.empty:
+        raise RuntimeError("No overlapping treated/control weeks to form a difference series.")
+
+    series["y"] = series["t"] - series["c"]
+
+    pre = series[series["week"] < policy_date].copy()
+    post = series[series["week"] >= policy_date].copy()
+    if pre.empty or post.empty:
+        raise RuntimeError("Pre or post period empty; check intervention_date and data coverage.")
+
+    y_pre = pre["y"].to_numpy(dtype=float)
+    if len(y_pre) < 8:
+        raise RuntimeError("Insufficient pre-period observations for SARIMAX fit (need >= 8 weeks).")
+
+    best: tuple[float, tuple[int, int, int], Any] | None = None
+    candidates = [(1, 0, 0), (0, 1, 1), (1, 1, 0), (0, 1, 0), (1, 1, 1)]
+    for order in candidates:
+        try:
+            model = SARIMAX(
+                y_pre,
+                order=order,
+                enforce_stationarity=False,
+                enforce_invertibility=False,
+            )
+            result = model.fit(disp=False)
+            aic = float(result.aic)
+        except Exception:
+            continue
+        if best is None or aic < best[0]:
+            best = (aic, order, result)
+
+    if best is None:
+        raise RuntimeError("SARIMAX failed to converge for all candidate orders.")
+
+    _, order, fitted = best
+    horizon = len(post)
+    forecast = fitted.get_forecast(steps=horizon)
+    predicted = np.asarray(forecast.predicted_mean, dtype=float)
+    conf_int = forecast.conf_int(alpha=0.05)
+    conf_arr = np.asarray(conf_int, dtype=float)
+
+    lower = conf_arr[:, 0]
+    upper = conf_arr[:, -1]
+    actual_post = post["y"].to_numpy(dtype=float)
+
+    effect = actual_post - predicted
+    att = float(np.mean(effect))
+
+    eff_lo = actual_post - upper
+    eff_hi = actual_post - lower
+    ci_lo = float(np.mean(eff_lo))
+    ci_hi = float(np.mean(eff_hi))
+
+    rows: list[Mapping[str, Any]] = []
+    for i, week in enumerate(post["week"].to_list()):
+        rows.append(
+            {
+                "date": pd.Timestamp(week).date().isoformat(),
+                "actual": float(actual_post[i]),
+                "predicted": float(predicted[i]),
+                "lower": float(lower[i]),
+                "upper": float(upper[i]),
+                "effect": float(effect[i]),
+            }
+        )
+
+    return att, (ci_lo, ci_hi), rows
 
 
 try:
@@ -314,33 +377,53 @@ try:
     bsts_att = _bsts_via_rscript(agg)
 except Exception as e:
     bsts_reason = f"BSTS via Rscript failed: {e}"
-except subprocess.CalledProcessError as exc:
-    stderr = getattr(exc, "stderr", b"")
-    if isinstance(stderr, bytes):
-        stderr = stderr.decode(errors="replace")
-    bsts_reason = (
-        f"Rscript failed (exit code {exc.returncode}). Did you install R packages? Error: {stderr.strip()}"
-    )
-except FileNotFoundError as exc:
-    bsts_reason = f"Rscript command not found: {exc}"
-except Exception as exc:
-    bsts_reason = f"BSTS via Rscript failed: {exc}"
 
 # ---------------------------
 # Save & Print Results
 # ---------------------------
+    impact_att, impact_ci, impact_series = _estimate_impact_sarimax(df, policy_date)
+except Exception as exc:
+    impact_reason = f"Python SARIMAX impact failed: {exc}"
+
+artifacts = generate_analysis_figures(
+    panel=df,
+    policy_date=policy_date,
+    pre_period=pre,
+    covariates=covars,
+    matched_treated=matched_treated_df,
+    matched_control=matched_control_df,
+    impact_series=impact_series,
+    root=PROJECT_ROOT,
+)
+
+impact_ci_payload: list[float | None]
+if all(v is not None for v in impact_ci):
+    impact_ci_payload = [float(impact_ci[0]), float(impact_ci[1])]
+else:
+    impact_ci_payload = [None, None]
+
 out = {
     "did_att": did_att,
     "did_se": did_se,
     "psm_att": (None if psm_att is None or (isinstance(psm_att, float) and np.isnan(psm_att)) else float(psm_att)),
+    "bsts_att": bsts_att,
     "psm_att": None
     if psm_att is None or (isinstance(psm_att, float) and np.isnan(psm_att))
     else float(psm_att),
-    "bsts_att": bsts_att,
+    "impact_att": impact_att,
+    "impact_ci": impact_ci_payload,
     "meta": {
         "psm_reason": psm_reason,
         "psm_diagnostics": psm_diag,
         "bsts_reason": bsts_reason,
+        "impact_reason": impact_reason,
+        "impact_method": "SARIMAX(treated_minus_control)",
+        "impact_series": impact_series,
+        "figures": {
+            "event_study": artifacts.event_study,
+            "balance": artifacts.balance,
+            "impact": artifacts.impact,
+        },
         "n_rows": int(len(df)),
         "n_regions": int(df["region"].nunique()),
     },
