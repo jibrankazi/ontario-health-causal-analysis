@@ -1,1 +1,1 @@
-# (paste the same Python code from Option A here)
+# paste the FULL code from above here (no extra lines)
