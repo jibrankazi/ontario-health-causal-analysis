@@ -1,7 +1,13 @@
 import json, os, random, tempfile, subprocess
-import json, os, random, shutil, tempfile, subprocess
+import json
+import os
+import random
+import subprocess
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
+
 import numpy as np
 import sys
 import pandas as pd
@@ -9,6 +15,13 @@ import statsmodels.formula.api as smf
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import NearestNeighbors
 import yaml
+
+from shared import (
+    ROOT,
+    load_config,
+    resolve_intervention_date,
+    resolve_rscript,
+)
 
 # --- Determinism ---
 os.environ["PYTHONHASHSEED"] = "0"
@@ -22,54 +35,7 @@ try:
 except FileNotFoundError:
     print("WARNING: config.yaml not found. Using defaults.")
     cfg = {}
-
-def _resolve_intervention_date(config: dict, default: str = "2021-02-01") -> str:
-    """Return intervention cutoff, honoring legacy 'policy_date'."""
-    for key in ("intervention_date", "policy_date"):
-        if config.get(key):
-            return str(config[key])
-    return default
-
-def _resolve_rscript(config: dict) -> str:
-    """Find Rscript via config, env, PATH, or common Windows locations."""
-    def _ok(p): 
-        p = Path(p).expanduser() if p else None
-        return p.as_posix() if p and p.exists() else None
-
-    # 1) explicit path in config
-    k = _ok(config.get("rscript_path"))
-    if k: return k
-
-    # 2) R_HOME (config overrides env)
-    r_home = config.get("r_home") or os.environ.get("R_HOME")
-    if r_home:
-        bin_name = "Rscript.exe" if os.name == "nt" else "Rscript"
-        for rel in (Path("bin")/bin_name, Path("bin")/"x64"/bin_name):
-            k = _ok(Path(r_home)/rel)
-            if k: return k
-
-    # 3) PATH
-    which_name = "Rscript.exe" if os.name == "nt" else "Rscript"
-    via = shutil.which(which_name)
-    if via: return Path(via).as_posix()
-
-    # 4) Windows default locations
-    if os.name == "nt":
-        cands = []
-        for env_key in ("ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"):
-            base = os.environ.get(env_key)
-            if not base: continue
-            root = Path(base) / "R"
-            if not root.exists(): continue
-            cands += sorted(root.glob("R-*/bin/Rscript.exe"))
-            cands += sorted(root.glob("R-*/bin/x64/Rscript.exe"))
-        if cands:
-            cands.sort()
-            return cands[-1].as_posix()
-
-    raise FileNotFoundError(
-        "Could not find Rscript. Set rscript_path or r_home in config.yaml, set R_HOME, or add R to PATH."
-    )
+cfg: dict[str, Any] = load_config()
 
 data_path = ROOT / cfg.get("data_path", "data/ontario_cases.csv")
 results_dir = ROOT / "results"
@@ -81,6 +47,7 @@ try:
 except FileNotFoundError:
     print(f"ERROR: Data file not found at {data_path}")
     sys.exit(1)
+    raise SystemExit(1)
 
 # expected columns
 required = {"week", "region", "incidence", "treated"}
@@ -93,19 +60,19 @@ if pd.api.types.is_string_dtype(df["week"]):
     df["week"] = pd.to_datetime(df["week"], errors="coerce")
 
 # Determine policy date and 'post' period
-resolved_policy = pd.Timestamp(_resolve_intervention_date(cfg))
+policy_date = resolve_intervention_date(cfg)
 if "post" not in df.columns:
     policy_date = pd.Timestamp(cfg.get("policy_date", "2021-02-01"))
-    policy_date = resolved_policy
     df["post"] = (df["week"] >= policy_date).astype(int)
 else:
     # If 'post' is pre-defined, try to infer the policy date for R script
     policy_date = df.loc[df["post"] == 1, "week"].min()
-    policy_date = pd.Timestamp(df.loc[df["post"] == 1, "week"].min())
-    if pd.isna(policy_date):
-        policy_date = resolved_policy
+    inferred = pd.Timestamp(df.loc[df["post"] == 1, "week"].min())
+    if not pd.isna(inferred):
+        policy_date = inferred
 
 # --- DiD (Difference-in-Differences) ---
+# --- DiD ---
 df["treat_post"] = df["treated"] * df["post"]
 try:
     did = smf.ols("incidence ~ C(region) + C(week) + treat_post", data=df).fit(
@@ -116,13 +83,28 @@ try:
 except Exception as e:
     did_att = float('nan')
     did_se = float('nan')
-    did_att = float('nan'); did_se = float('nan')
     print(f"WARNING: DiD estimation failed: {e}")
 
 # --- PSM (Propensity Score Matching) ---
 psm_att = None
 psm_reason = None
 psm_diag = {}
+    did_se = float(did.bse.get("treat_post", float("nan")))
+except Exception as exc:  # pragma: no cover - defensive
+    print(f"WARNING: DiD estimation failed: {exc}")
+    did_att = float("nan")
+    did_se = float("nan")
+
+# --- PSM ---
+psm_att: float | None = None
+psm_reason: str | None = None
+psm_diag: dict[str, Any] = {}
+
+pre = df[df["post"] == 0].copy()
+drop_cols = {"week", "region", "incidence", "treated", "post", "treat_post"}
+covars = [c for c in pre.columns if c not in drop_cols and pd.api.types.is_numeric_dtype(pre[c])]
+if not covars:
+    covars = ["incidence"]
 
 try:
     pre = df[df["post"] == 0].copy()
@@ -131,10 +113,10 @@ try:
     covars = [c for c in pre.columns if c not in drop_cols and pd.api.types.is_numeric_dtype(pre[c])]
     if not covars:
         covars = ["incidence"] # Fallback if no other numeric covariates are found
-        covars = ["incidence"]
 
     n_treat = int(pre["treated"].sum())
     n_ctrl  = int((1 - pre["treated"]).sum())
+    n_ctrl = int((1 - pre["treated"]).sum())
     psm_diag.update(n_treat_pre=n_treat, n_ctrl_pre=n_ctrl, covars=covars)
 
     if n_treat == 0 or n_ctrl == 0:
@@ -154,6 +136,7 @@ try:
     ps_t = pre.loc[pre["treated"] == 1, "ps"]
     ps_c = pre.loc[pre["treated"] == 0, "ps"]
     overlap_low  = max(ps_t.min(), ps_c.min())
+    overlap_low = max(ps_t.min(), ps_c.min())
     overlap_high = min(ps_t.max(), ps_c.max())
     psm_diag.update(ps_overlap_low=float(overlap_low), ps_overlap_high=float(overlap_high))
 
@@ -165,6 +148,7 @@ try:
     pre_cs = pre[pre["ps"].between(overlap_low, overlap_high, inclusive="both")].copy()
     n_treat_cs = int(pre_cs["treated"].sum())
     n_ctrl_cs  = int((1 - pre_cs["treated"]).sum())
+    n_ctrl_cs = int((1 - pre_cs["treated"]).sum())
     psm_diag.update(n_treat_pre_cs=n_treat_cs, n_ctrl_pre_cs=n_ctrl_cs)
 
     if n_treat_cs == 0 or n_ctrl_cs == 0:
@@ -174,25 +158,32 @@ try:
     # Calculate Caliper (0.2 * SD of Logit PS is a common rule)
     eps = 1e-6
     logit = np.log(np.clip(pre_cs["ps"], eps, 1 - eps)) - np.log(1 - np.clip(pre_cs["ps"], eps, 1 - eps))
+    ps_vals = pre_cs["ps"].clip(eps, 1 - eps)
+    logit = np.log(ps_vals) - np.log1p(-ps_vals)
     caliper = 0.2 * float(np.nanstd(logit))
     psm_diag.update(caliper=caliper)
 
     # 1:1 Nearest Neighbor Matching with Caliper (on PS distance)
     caliper_limit_ps = caliper * 0.25 # Use a fraction of the logit SD caliper for PS distance
-    caliper_limit_ps = caliper * 0.25
     psm_diag.update(caliper_ps_limit=float(caliper_limit_ps))
+    caliper_limit_ps = caliper * 0.25
+    psm_diag.update(caliper=caliper, caliper_ps_limit=float(caliper_limit_ps))
 
     controls = pre_cs[pre_cs["treated"] == 0].copy()
     treats   = pre_cs[pre_cs["treated"] == 1].copy()
     
     # Matching on the raw PS
+    treats = pre_cs[pre_cs["treated"] == 1].copy()
 
     nn = NearestNeighbors(n_neighbors=1, metric="euclidean")
     nn.fit(controls[["ps"]].to_numpy())
     dist, idx = nn.kneighbors(treats[["ps"]].to_numpy())
     dist = dist.flatten(); idx = idx.flatten()
+    dist = dist.flatten()
+    idx = idx.flatten()
 
     ps_pairs = []
+    ps_pairs: list[tuple[pd.Series, pd.Series]] = []
     for i, j in enumerate(idx):
         # Check if the PS distance is within the caliper limit
         if dist[i] <= caliper_limit_ps:
@@ -200,6 +191,8 @@ try:
 
     psm_diag.update(n_matched=len(ps_pairs))
     if len(ps_pairs) == 0:
+    psm_diag["n_matched"] = len(ps_pairs)
+    if not ps_pairs:
         psm_reason = "No matches within caliper; skipping PSM."
         raise RuntimeError(psm_reason)
 
@@ -210,56 +203,73 @@ try:
     
     for t_row, c_row in ps_pairs:
         t_reg = t_row["region"]; c_reg = c_row["region"]
+
+    diffs: list[float] = []
+    for treated_row, control_row in ps_pairs:
+        t_reg = treated_row["region"]
+        c_reg = control_row["region"]
         if t_reg in post_mean.index and c_reg in post_mean.index:
             # ATT = E[Y_t(1) - Y_t(0) | T=1]
             # Use post-period mean difference of matched regions
             diffs.append(float(post_mean.loc[t_reg] - post_mean.loc[c_reg]))
             
-
     if len(diffs) == 0:
+
+    if not diffs:
         psm_reason = "Matched regions missing from post-period; skipping PSM."
         raise RuntimeError(psm_reason)
 
     psm_att = float(np.mean(diffs))
 except Exception as e:
+except Exception as exc:
     if not psm_reason:
         psm_reason = f"PSM failed due to an unexpected error: {e}"
     pass # psm_att remains None/NaN
-    # psm_att stays None
+        psm_reason = f"PSM failed due to an unexpected error: {exc}"
 
 # --- BSTS / CausalImpact (via Rscript) ---
-# --- BSTS / CausalImpact via Rscript ---
 bsts_att = None
 bsts_reason = None
+# --- BSTS ---
+bsts_att: float | None = None
+bsts_reason: str | None = None
 
 def try_rscript_path(agg: pd.DataFrame):
     """
     Runs CausalImpact via Rscript, dynamically finding Rscript using R_HOME if available.
-    Run CausalImpact via Rscript, using a zoo<Date>-indexed series and Date periods.
     """
+
+def _bsts_via_rscript(agg: pd.DataFrame) -> float | None:
+    """Run CausalImpact via Rscript and return the average absolute effect."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         csv_p = td / "series.csv"
         out_p = td / "out.json"
         
         # Save data to CSV for R
-
-        agg = agg.copy()
-        if pd.api.types.is_datetime64_any_dtype(agg["week"]):
-            agg["week"] = agg["week"].dt.date
         agg.to_csv(csv_p, index=False)
         policy_date_str = pd.Timestamp(cfg.get("policy_date", "2021-02-01")).date().isoformat()
         
         # R script to run CausalImpact on the aggregated incidence time series
-        policy_date_str = policy_date.date().isoformat()
+        temp_dir = Path(td)
+        csv_path = temp_dir / "series.csv"
+        out_path = temp_dir / "out.json"
 
+        series = agg.copy()
+        if pd.api.types.is_datetime64_any_dtype(series["week"]):
+            series["week"] = series["week"].dt.date
+        series = series[["week", "incidence"]].dropna()
+        series.to_csv(csv_path, index=False)
+
+        policy_str = policy_date.date().isoformat()
         r_code = f"""
             suppressMessages(library(CausalImpact))
             suppressMessages(library(jsonlite))
             suppressMessages(library(zoo))
             
-
             dat <- read.csv("{csv_p.as_posix()}")
+
+            dat <- read.csv("{csv_path.as_posix()}")
             dat$week <- as.Date(dat$week)
             
             # Create a time series object (CausalImpact requires a zoo or xts object)
@@ -276,22 +286,25 @@ def try_rscript_path(agg: pd.DataFrame):
             # Extract the cumulative average effect (ATT)
             res <- list(bsts_att=as.numeric(ci$summary$AbsEffect["Average"]))
             write(jsonlite::toJSON(res, auto_unbox=TRUE), "{out_p.as_posix()}")
+            dat$incidence <- as.numeric(dat$incidence)
 
-            # Date-indexed zoo series
             ts <- zoo(dat$incidence, order.by = dat$week)
 
-            pre_start  <- min(dat$week, na.rm=TRUE)
-            pre_end    <- as.Date("{policy_date_str}") - 1
+            pre_start  <- min(index(ts))
+            pre_end    <- as.Date("{policy_str}") - 1
             post_start <- pre_end + 1
-            post_end   <- max(dat$week, na.rm=TRUE)
+            post_end   <- max(index(ts))
 
             ci <- CausalImpact(ts, c(pre_start, pre_end), c(post_start, post_end))
 
-            att <- as.numeric(ci$summary$AbsEffect["Average"])
-            res <- list(bsts_att = att)
-            write(jsonlite::toJSON(res, auto_unbox=TRUE, na="null"), "{out_p.as_posix()}")
+            att <- suppressWarnings(as.numeric(ci$summary$AbsEffect["Average"]))
+            if (is.na(att)) att_json <- NULL else att_json <- att
+
+            res <- list(bsts_att = att_json)
+            write(jsonlite::toJSON(res, auto_unbox = TRUE, na = "null"), "{out_path.as_posix()}")
         """
         r_script = td / "run_ci.R"
+        r_script = temp_dir / "run_ci.R"
         r_script.write_text(r_code)
         
         # --- Determine Rscript executable path ---
@@ -309,14 +322,16 @@ def try_rscript_path(agg: pd.DataFrame):
                 
         # The subprocess call uses the determined executable path
 
-        rscript_exec = _resolve_rscript(cfg)
+        rscript_exec = resolve_rscript(cfg)
         subprocess.check_call([rscript_exec, r_script.as_posix()])
         
-
         out = json.loads(out_p.read_text())
         return float(out["bsts_att"])
-        val = out.get("bsts_att", None)
+
+        payload = json.loads(out_path.read_text())
+        val = payload.get("bsts_att")
         return None if val is None else float(val)
+
 
 try:
     # Aggregate data for single time series analysis
@@ -325,22 +340,32 @@ try:
     bsts_reason = None
 except subprocess.CalledProcessError as e:
     bsts_reason = f"Rscript failed (exit code {e.returncode}). Did you install R packages? Error: {e.stderr.decode()}"
-    err = getattr(e, "stderr", b"")
-    if isinstance(err, bytes):
-        err = err.decode(errors="replace")
-    bsts_reason = f"Rscript failed (exit code {e.returncode}). Did you install R packages? Error: {err}"
 except FileNotFoundError as e:
     bsts_reason = f"Rscript command not found. Set R_HOME environment variable. Error: {e}"
-    bsts_reason = f"Rscript command not found: {e}"
 except Exception as e:
     bsts_reason = "BSTS via Rscript failed: " + str(e)
 
+    bsts_att = _bsts_via_rscript(agg)
+except subprocess.CalledProcessError as exc:
+    stderr = getattr(exc, "stderr", b"")
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode(errors="replace")
+    bsts_reason = (
+        f"Rscript failed (exit code {exc.returncode}). Did you install R packages? Error: {stderr.strip()}"
+    )
+except FileNotFoundError as exc:
+    bsts_reason = f"Rscript command not found: {exc}"
+except Exception as exc:
+    bsts_reason = f"BSTS via Rscript failed: {exc}"
 
 # --- Save results ---
 out = {
     "did_att": did_att,
     "did_se": did_se,
     "psm_att": (None if psm_att is None or (isinstance(psm_att, float) and np.isnan(psm_att)) else float(psm_att)),
+    "psm_att": None
+    if psm_att is None or (isinstance(psm_att, float) and np.isnan(psm_att))
+    else float(psm_att),
     "bsts_att": bsts_att,
     "meta": {
         "psm_reason": psm_reason,
@@ -351,5 +376,6 @@ out = {
     },
     "timestamp": datetime.now(timezone.utc).isoformat(),
 }
+
 (results_dir / "results.json").write_text(json.dumps(out, indent=2))
 print(json.dumps(out, indent=2))
