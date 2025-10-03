@@ -1,7 +1,7 @@
 {
-  "did_att": -108.61279573754561,
-  "did_se": 105.79618064337963,
-  "psm_att": -111.05509345689038,
+  "did_att": -108.61279573754655,
+  "did_se": 105.7961806433797,
+  "psm_att": -99.36668357683985,
   "bsts_att": null,
   "meta": {
     "psm_reason": null,
@@ -15,12 +15,12 @@
       "ps_overlap_high": 0.17022992134546097,
       "n_treat_pre_cs": 220,
       "n_ctrl_pre_cs": 1194,
-      "caliper": 0.05187570841162145,
+      "caliper": 0.05187570841162146,
       "n_matched": 220
     },
-    "bsts_reason": "R/rpy2 or CausalImpact not available, or failed to run.",
+    "bsts_reason": "BSTS via Rscript failed: [Errno 2] No such file or directory: 'Rscript'",
     "n_rows": 4760,
     "n_regions": 34
   },
-  "timestamp": "2025-10-03T00:14:45.377937+00:00"
+  "timestamp": "2025-10-03T03:24:25.387367+00:00"
 }
