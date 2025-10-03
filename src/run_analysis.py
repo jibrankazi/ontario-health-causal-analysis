@@ -1,4 +1,5 @@
 import json, os, random, tempfile, subprocess
+import json, os, random, shutil, tempfile, subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 import numpy as np
@@ -22,6 +23,54 @@ except FileNotFoundError:
     print("WARNING: config.yaml not found. Using defaults.")
     cfg = {}
 
+def _resolve_intervention_date(config: dict, default: str = "2021-02-01") -> str:
+    """Return intervention cutoff, honoring legacy 'policy_date'."""
+    for key in ("intervention_date", "policy_date"):
+        if config.get(key):
+            return str(config[key])
+    return default
+
+def _resolve_rscript(config: dict) -> str:
+    """Find Rscript via config, env, PATH, or common Windows locations."""
+    def _ok(p): 
+        p = Path(p).expanduser() if p else None
+        return p.as_posix() if p and p.exists() else None
+
+    # 1) explicit path in config
+    k = _ok(config.get("rscript_path"))
+    if k: return k
+
+    # 2) R_HOME (config overrides env)
+    r_home = config.get("r_home") or os.environ.get("R_HOME")
+    if r_home:
+        bin_name = "Rscript.exe" if os.name == "nt" else "Rscript"
+        for rel in (Path("bin")/bin_name, Path("bin")/"x64"/bin_name):
+            k = _ok(Path(r_home)/rel)
+            if k: return k
+
+    # 3) PATH
+    which_name = "Rscript.exe" if os.name == "nt" else "Rscript"
+    via = shutil.which(which_name)
+    if via: return Path(via).as_posix()
+
+    # 4) Windows default locations
+    if os.name == "nt":
+        cands = []
+        for env_key in ("ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"):
+            base = os.environ.get(env_key)
+            if not base: continue
+            root = Path(base) / "R"
+            if not root.exists(): continue
+            cands += sorted(root.glob("R-*/bin/Rscript.exe"))
+            cands += sorted(root.glob("R-*/bin/x64/Rscript.exe"))
+        if cands:
+            cands.sort()
+            return cands[-1].as_posix()
+
+    raise FileNotFoundError(
+        "Could not find Rscript. Set rscript_path or r_home in config.yaml, set R_HOME, or add R to PATH."
+    )
+
 data_path = ROOT / cfg.get("data_path", "data/ontario_cases.csv")
 results_dir = ROOT / "results"
 results_dir.mkdir(parents=True, exist_ok=True)
@@ -44,12 +93,17 @@ if pd.api.types.is_string_dtype(df["week"]):
     df["week"] = pd.to_datetime(df["week"], errors="coerce")
 
 # Determine policy date and 'post' period
+resolved_policy = pd.Timestamp(_resolve_intervention_date(cfg))
 if "post" not in df.columns:
     policy_date = pd.Timestamp(cfg.get("policy_date", "2021-02-01"))
+    policy_date = resolved_policy
     df["post"] = (df["week"] >= policy_date).astype(int)
 else:
     # If 'post' is pre-defined, try to infer the policy date for R script
     policy_date = df.loc[df["post"] == 1, "week"].min()
+    policy_date = pd.Timestamp(df.loc[df["post"] == 1, "week"].min())
+    if pd.isna(policy_date):
+        policy_date = resolved_policy
 
 # --- DiD (Difference-in-Differences) ---
 df["treat_post"] = df["treated"] * df["post"]
@@ -62,6 +116,7 @@ try:
 except Exception as e:
     did_att = float('nan')
     did_se = float('nan')
+    did_att = float('nan'); did_se = float('nan')
     print(f"WARNING: DiD estimation failed: {e}")
 
 # --- PSM (Propensity Score Matching) ---
@@ -76,6 +131,7 @@ try:
     covars = [c for c in pre.columns if c not in drop_cols and pd.api.types.is_numeric_dtype(pre[c])]
     if not covars:
         covars = ["incidence"] # Fallback if no other numeric covariates are found
+        covars = ["incidence"]
 
     n_treat = int(pre["treated"].sum())
     n_ctrl  = int((1 - pre["treated"]).sum())
@@ -123,12 +179,14 @@ try:
 
     # 1:1 Nearest Neighbor Matching with Caliper (on PS distance)
     caliper_limit_ps = caliper * 0.25 # Use a fraction of the logit SD caliper for PS distance
+    caliper_limit_ps = caliper * 0.25
     psm_diag.update(caliper_ps_limit=float(caliper_limit_ps))
 
     controls = pre_cs[pre_cs["treated"] == 0].copy()
     treats   = pre_cs[pre_cs["treated"] == 1].copy()
     
     # Matching on the raw PS
+
     nn = NearestNeighbors(n_neighbors=1, metric="euclidean")
     nn.fit(controls[["ps"]].to_numpy())
     dist, idx = nn.kneighbors(treats[["ps"]].to_numpy())
@@ -157,6 +215,7 @@ try:
             # Use post-period mean difference of matched regions
             diffs.append(float(post_mean.loc[t_reg] - post_mean.loc[c_reg]))
             
+
     if len(diffs) == 0:
         psm_reason = "Matched regions missing from post-period; skipping PSM."
         raise RuntimeError(psm_reason)
@@ -166,14 +225,17 @@ except Exception as e:
     if not psm_reason:
         psm_reason = f"PSM failed due to an unexpected error: {e}"
     pass # psm_att remains None/NaN
+    # psm_att stays None
 
 # --- BSTS / CausalImpact (via Rscript) ---
+# --- BSTS / CausalImpact via Rscript ---
 bsts_att = None
 bsts_reason = None
 
 def try_rscript_path(agg: pd.DataFrame):
     """
     Runs CausalImpact via Rscript, dynamically finding Rscript using R_HOME if available.
+    Run CausalImpact via Rscript, using a zoo<Date>-indexed series and Date periods.
     """
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
@@ -181,15 +243,22 @@ def try_rscript_path(agg: pd.DataFrame):
         out_p = td / "out.json"
         
         # Save data to CSV for R
+
+        agg = agg.copy()
+        if pd.api.types.is_datetime64_any_dtype(agg["week"]):
+            agg["week"] = agg["week"].dt.date
         agg.to_csv(csv_p, index=False)
         policy_date_str = pd.Timestamp(cfg.get("policy_date", "2021-02-01")).date().isoformat()
         
         # R script to run CausalImpact on the aggregated incidence time series
+        policy_date_str = policy_date.date().isoformat()
+
         r_code = f"""
             suppressMessages(library(CausalImpact))
             suppressMessages(library(jsonlite))
             suppressMessages(library(zoo))
             
+
             dat <- read.csv("{csv_p.as_posix()}")
             dat$week <- as.Date(dat$week)
             
@@ -207,6 +276,20 @@ def try_rscript_path(agg: pd.DataFrame):
             # Extract the cumulative average effect (ATT)
             res <- list(bsts_att=as.numeric(ci$summary$AbsEffect["Average"]))
             write(jsonlite::toJSON(res, auto_unbox=TRUE), "{out_p.as_posix()}")
+
+            # Date-indexed zoo series
+            ts <- zoo(dat$incidence, order.by = dat$week)
+
+            pre_start  <- min(dat$week, na.rm=TRUE)
+            pre_end    <- as.Date("{policy_date_str}") - 1
+            post_start <- pre_end + 1
+            post_end   <- max(dat$week, na.rm=TRUE)
+
+            ci <- CausalImpact(ts, c(pre_start, pre_end), c(post_start, post_end))
+
+            att <- as.numeric(ci$summary$AbsEffect["Average"])
+            res <- list(bsts_att = att)
+            write(jsonlite::toJSON(res, auto_unbox=TRUE, na="null"), "{out_p.as_posix()}")
         """
         r_script = td / "run_ci.R"
         r_script.write_text(r_code)
@@ -225,10 +308,15 @@ def try_rscript_path(agg: pd.DataFrame):
                 rscript_exec = str(rscript_base.as_posix())
                 
         # The subprocess call uses the determined executable path
+
+        rscript_exec = _resolve_rscript(cfg)
         subprocess.check_call([rscript_exec, r_script.as_posix()])
         
+
         out = json.loads(out_p.read_text())
         return float(out["bsts_att"])
+        val = out.get("bsts_att", None)
+        return None if val is None else float(val)
 
 try:
     # Aggregate data for single time series analysis
@@ -237,8 +325,13 @@ try:
     bsts_reason = None
 except subprocess.CalledProcessError as e:
     bsts_reason = f"Rscript failed (exit code {e.returncode}). Did you install R packages? Error: {e.stderr.decode()}"
+    err = getattr(e, "stderr", b"")
+    if isinstance(err, bytes):
+        err = err.decode(errors="replace")
+    bsts_reason = f"Rscript failed (exit code {e.returncode}). Did you install R packages? Error: {err}"
 except FileNotFoundError as e:
     bsts_reason = f"Rscript command not found. Set R_HOME environment variable. Error: {e}"
+    bsts_reason = f"Rscript command not found: {e}"
 except Exception as e:
     bsts_reason = "BSTS via Rscript failed: " + str(e)
 
