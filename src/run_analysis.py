@@ -1,296 +1,204 @@
-import pandas as pd
+cat > scripts/run_all.py <<'PY'
+import json, os, random, tempfile, subprocess
+from datetime import datetime, timezone
+from pathlib import Path
 import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-import statsmodels.api as sm
-import statsmodels.formula.api as smf
-from sklearn.neighbors import NearestNeighbors
-from sklearn.linear_model import LogisticRegression
-from datetime import datetime
-import os
-import sys
-from causalimpact import CausalImpact
 
-# Set random seed for reproducibility
+# --- Determinism ---
+os.environ["PYTHONHASHSEED"] = "0"
+random.seed(42)
 np.random.seed(42)
 
-# Configurable path
-DATA_PATH = os.environ.get("CAUSAL_DATA_PATH", "data/ontario_cases.csv")
+# --- Config ---
+import yaml
+ROOT = Path(__file__).resolve().parents[1]
+cfg = yaml.safe_load((ROOT / "config.yaml").read_text())
 
-# 1. Load and Prepare Data
+data_path = ROOT / cfg.get("data_path", "data/ontario_cases.csv")
+results_dir = ROOT / "results"
+results_dir.mkdir(parents=True, exist_ok=True)
+
+# --- Load data ---
+import pandas as pd
+df = pd.read_csv(data_path)
+
+# expected columns
+required = {"week", "region", "incidence", "treated"}
+missing = required - set(df.columns)
+if missing:
+    raise ValueError(f"Missing required columns: {missing}")
+
+# parse dates
+if pd.api.types.is_string_dtype(df["week"]):
+    df["week"] = pd.to_datetime(df["week"], errors="coerce")
+
+if "post" not in df.columns:
+    policy_date = pd.Timestamp(cfg.get("policy_date", "2021-02-01"))
+    df["post"] = (df["week"] >= policy_date).astype(int)
+
+# --- DiD ---
+import statsmodels.formula.api as smf
+df["treat_post"] = df["treated"] * df["post"]
+did = smf.ols("incidence ~ C(region) + C(week) + treat_post", data=df).fit(
+    cov_type="cluster", cov_kwds={"groups": df["region"]}
+)
+did_att = float(did.params.get("treat_post", float("nan")))
+did_se  = float(did.bse.get("treat_post", float("nan")))
+
+# --- PSM (robust) ---
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import NearestNeighbors
+
+psm_att = None
+psm_reason = None
+psm_diag = {}
+
 try:
-    df = pd.read_csv(DATA_PATH)
-    
-    # FIX 1: Strip whitespace from column names to ensure renaming works correctly
-    df.columns = df.columns.str.strip()
-    
-    print("Initial columns:", df.columns.tolist())
-    
-    # Rename columns immediately and assign back to df
-    # Assuming the file contains 'incidence' and 'treated' columns
-    df = df.rename(columns={'incidence': 'y', 'treated': 'Treat'})
-    
-    # FIX 2: Ensure 'week' column is a datetime object for all subsequent calculations
-    df['week'] = pd.to_datetime(df['week'])
+    pre = df[df["post"] == 0].copy()
+    drop_cols = {"week","region","incidence","treated","post","treat_post"}
+    covars = [c for c in pre.columns if c not in drop_cols and pd.api.types.is_numeric_dtype(pre[c])]
+    if not covars:
+        covars = ["incidence"]
 
-    print("Renamed columns:", df.columns.tolist())
+    n_treat = int(pre["treated"].sum())
+    n_ctrl  = int((1 - pre["treated"]).sum())
+    psm_diag.update(n_treat_pre=n_treat, n_ctrl_pre=n_ctrl, covars=covars)
 
-    # Verify required columns after renaming
-    required_cols = ['region', 'week', 'y', 'Treat']
-    if not all(col in df.columns for col in required_cols):
-        missing = [col for col in required_cols if col not in df.columns]
-        raise ValueError(f"Missing columns after renaming: {missing}")
+    if n_treat == 0 or n_ctrl == 0:
+        psm_reason = "No treated or control units in pre-period; skipping PSM."
+        raise RuntimeError(psm_reason)
 
-    # Check for missing values
-    if df[required_cols].isna().any().any():
-        print("Warning: Missing values detected. Imputing 'y' with mean.")
-        df['y'] = df['y'].fillna(df['y'].mean())
-        
-    df = df.sort_values('week')
-    
-except FileNotFoundError:
-    print(f"Error: Data file not found at {DATA_PATH}")
-    sys.exit(1)
-except ValueError as e:
-    # If the ValueError is from the column check, it will be caught here.
-    # The fix above should prevent this, but it remains a good safety check.
-    print(f"Data validation error: {e}")
-    sys.exit(1)
-except Exception as e:
-    print(f"Unexpected error loading data: {e}")
-    sys.exit(1)
+    X = pre[covars].fillna(pre[covars].median(numeric_only=True)).to_numpy()
+    y = pre["treated"].to_numpy()
 
-# Ensure the 'Post' period is defined relative to the intervention date
-df['Post'] = (df['week'] >= pd.Timestamp('2021-02-01')).astype(int)
-print("Data preparation completed.")
+    lr = LogisticRegression(max_iter=500, random_state=42)
+    lr.fit(X, y)
+    pre["ps"] = lr.predict_proba(X)[:, 1]
 
-# Create output directories with absolute paths
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FIGURES_DIR = os.path.join(BASE_DIR, 'figures')
-RESULTS_DIR = os.path.join(BASE_DIR, 'results')
-os.makedirs(FIGURES_DIR, exist_ok=True)
-os.makedirs(RESULTS_DIR, exist_ok=True)
+    ps_t = pre.loc[pre["treated"] == 1, "ps"]
+    ps_c = pre.loc[pre["treated"] == 0, "ps"]
+    overlap_low  = max(ps_t.min(), ps_c.min())
+    overlap_high = min(ps_t.max(), ps_c.max())
+    psm_diag.update(ps_overlap_low=float(overlap_low), ps_overlap_high=float(overlap_high))
 
-# 2. Difference-in-Differences (DiD)
+    if overlap_low >= overlap_high:
+        psm_reason = "No common support in propensity scores; skipping PSM."
+        raise RuntimeError(psm_reason)
+
+    pre_cs = pre[pre["ps"].between(overlap_low, overlap_high, inclusive="both")].copy()
+    n_treat_cs = int(pre_cs["treated"].sum())
+    n_ctrl_cs  = int((1 - pre_cs["treated"]).sum())
+    psm_diag.update(n_treat_pre_cs=n_treat_cs, n_ctrl_pre_cs=n_ctrl_cs)
+
+    if n_treat_cs == 0 or n_ctrl_cs == 0:
+        psm_reason = "Common-support filter removed all treated or control units; skipping PSM."
+        raise RuntimeError(psm_reason)
+
+    eps = 1e-6
+    logit = np.log(np.clip(pre_cs["ps"], eps, 1 - eps)) - np.log(1 - np.clip(pre_cs["ps"], eps, 1 - eps))
+    caliper = 0.2 * float(np.nanstd(logit))
+    psm_diag.update(caliper=caliper)
+
+    controls = pre_cs[pre_cs["treated"] == 0].copy()
+    treats   = pre_cs[pre_cs["treated"] == 1].copy()
+    nn = NearestNeighbors(n_neighbors=1, metric="euclidean")
+    nn.fit(controls[["ps"]].to_numpy())
+    dist, idx = nn.kneighbors(treats[["ps"]].to_numpy())
+    dist = dist.flatten(); idx = idx.flatten()
+
+    ps_pairs = []
+    for i, j in enumerate(idx):
+        ps_ti = float(treats["ps"].iloc[i]); ps_ci = float(controls["ps"].iloc[j])
+        if abs(ps_ti - ps_ci) <= max(0.1, caliper * 0.25):
+            ps_pairs.append((treats.iloc[i], controls.iloc[j]))
+
+    psm_diag.update(n_matched=len(ps_pairs))
+    if len(ps_pairs) == 0:
+        psm_reason = "No matches within caliper; skipping PSM."
+        raise RuntimeError(psm_reason)
+
+    post = df[df["post"] == 1].copy()
+    post_mean = post.groupby("region", as_index=True)["incidence"].mean()
+    diffs = []
+    for t_row, c_row in ps_pairs:
+        t_reg = t_row["region"]; c_reg = c_row["region"]
+        if t_reg in post_mean.index and c_reg in post_mean.index:
+            diffs.append(float(post_mean.loc[t_reg] - post_mean.loc[c_reg]))
+    if len(diffs) == 0:
+        psm_reason = "Matched regions missing from post-period; skipping PSM."
+        raise RuntimeError(psm_reason)
+
+    psm_att = float(np.mean(diffs))
+except Exception:
+    pass
+
+# --- BSTS / CausalImpact ---
+bsts_att = None
+bsts_reason = None
+
+def try_rpy2_path(agg: pd.DataFrame):
+    import rpy2.robjects as ro
+    from rpy2.robjects import pandas2ri
+    ro.r('suppressMessages(library(CausalImpact))')
+    pandas2ri.activate()
+    r_df = pandas2ri.py2rpy(agg)
+    ro.globalenv["dat"] = r_df
+    policy = pd.Timestamp(cfg.get("policy_date", "2021-02-01"))
+    pre_end = agg[agg["week"] < policy]["week"].max()
+    post_end = agg["week"].max()
+    ro.globalenv["pre_end"] = ro.r(f'as.Date("{pre_end.date()}")')
+    ro.globalenv["post_end"] = ro.r(f'as.Date("{post_end.date()}")')
+    ci = ro.r('CausalImpact(dat$incidence, c(min(dat$week), pre_end), c(pre_end+1, post_end))')
+    return float(ro.r('as.numeric(ci$summary$AbsEffect["Average"])')[0])
+
+def try_rscript_path(agg: pd.DataFrame):
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        csv_p = td / "series.csv"
+        out_p = td / "out.json"
+        agg.to_csv(csv_p, index=False)
+        policy = pd.Timestamp(cfg.get("policy_date", "2021-02-01")).date()
+        r_code = f"""
+            suppressMessages(library(CausalImpact))
+            suppressMessages(library(jsonlite))
+            dat <- read.csv("{csv_p.as_posix()}")
+            dat$week <- as.Date(dat$week)
+            pre_end  <- as.Date("{policy}") - 1
+            post_end <- max(dat$week, na.rm=TRUE)
+            ci <- CausalImpact(dat$incidence, c(min(dat$week, na.rm=TRUE), pre_end), c(pre_end+1, post_end))
+            res <- list(bsts_att=as.numeric(ci$summary$AbsEffect["Average"]))
+            write(jsonlite::toJSON(res, auto_unbox=TRUE), "{out_p.as_posix()}")
+        """
+        r_script = td / "run_ci.R"
+        r_script.write_text(r_code)
+        subprocess.check_call(["Rscript", r_script.as_posix()])
+        out = json.loads(out_p.read_text())
+        return float(out["bsts_att"])
+
 try:
-    df['Treat:Post'] = df['Treat'] * df['Post']
-    # 'time_trend' relies on 'week' being a datetime, which is now ensured
-    df['time_trend'] = (df['week'] - df['week'].min()).dt.days / 7
-    X = sm.add_constant(df[['Treat', 'Post', 'Treat:Post', 'time_trend']])
-    model = sm.OLS(df['y'], X).fit(cov_type='HC1')
-    print("\n--- Difference-in-Differences (DiD) Model Summary ---")
-    print(model.summary())
-    did_att = model.params['Treat:Post']
-    print(f"\nDiD Average Treatment Effect on the Treated (ATT): {did_att:.3f}")
-except Exception as e:
-    print(f"Error in DiD: {e}")
-    sys.exit(1)
-
-# 3. Propensity Score Matching (PSM) with SMD
-try:
-    # Dropping 'week', 'y', and 'Post' as covariates for propensity score estimation
-    X_psm = df.drop(columns=['week', 'y', 'Post'])
-    y_psm = df['Treat']
-    
-    # Handle the 'region' categorical variable
-    X_psm = pd.get_dummies(X_psm, columns=['region'], drop_first=True)
-    
-    logit = LogisticRegression(max_iter=1000)
-    logit.fit(X_psm, y_psm)
-    propensity_scores = pd.Series(logit.predict_proba(X_psm)[:, 1], index=df.index)
-    
-    treated_mask = df['Treat'] == 1
-    control_mask = df['Treat'] == 0
-    
-    nn = NearestNeighbors(n_neighbors=1, metric='euclidean')
-    nn.fit(propensity_scores[control_mask].values.reshape(-1, 1))
-    distances, indices = nn.kneighbors(propensity_scores[treated_mask].values.reshape(-1, 1))
-    
-    matched_control_indices = np.where(control_mask)[0][indices.flatten()]
-    matched_indices = np.concatenate([np.where(treated_mask)[0], matched_control_indices])
-    matched_df = df.iloc[matched_indices].copy()
-    
-    def calculate_smd(df1, df2, cols):
-        """Calculates Standardized Mean Difference (SMD) for covariates."""
-        # Ensure only columns existing in the PSM features are used for SMD calculation
-        cols_to_use = [col for col in cols if col in df1.columns and col in df2.columns]
-        if not cols_to_use:
-            return pd.Series([], dtype=float)
-
-        mean_diff = df1[cols_to_use].mean() - df2[cols_to_use].mean()
-        pooled_std = np.sqrt((df1[cols_to_use].var() + df2[cols_to_use].var()) / 2)
-        return np.abs(mean_diff / pooled_std)
-
-    # Note: Need to pass only the common feature columns (X_psm.columns) to SMD calculation
-    
-    # Calculate SMD for the original dataframe features (needs to align with X_psm columns)
-    df_psm_features = pd.get_dummies(df.drop(columns=['week', 'y', 'Post']), columns=['region'], drop_first=True)
-
-    smd_before = calculate_smd(df_psm_features[treated_mask], df_psm_features[control_mask], df_psm_features.columns)
-
-    # Calculate SMD for the matched dataframe features
-    matched_psm_features = pd.get_dummies(matched_df.drop(columns=['week', 'y', 'Post']), columns=['region'], drop_first=True)
-    matched_treated_mask = matched_df['Treat'] == 1
-    matched_control_mask = matched_df['Treat'] == 0
-    
-    smd_after = calculate_smd(matched_psm_features[matched_treated_mask], matched_psm_features[matched_control_mask], matched_psm_features.columns)
-
-    print("\n--- Propensity Score Matching (PSM) Balance Check ---")
-    print("SMD before matching (Mean):", smd_before.mean())
-    print("SMD after matching (Mean):", smd_after.mean())
-    
-    # Calculate PSM ATT using the matched sample
-    psm_att = matched_df[matched_df['Treat'] == 1]['y'].mean() - matched_df[matched_df['Treat'] == 0]['y'].mean()
-    print(f"PSM ATT: {psm_att:.3f}")
-    
-    # Plotting SMD balance
-    plt.figure(figsize=(10, 6))
-    plt.plot([0, 1], [smd_before.mean(), smd_after.mean()], marker='o', label='Mean SMD')
-    plt.axhline(0.1, color='r', linestyle='--', label='Threshold (0.1)')
-    plt.xticks([0, 1], ['Before Matching', 'After Matching'])
-    plt.title('Covariate Balance Improvement after PSM')
-    plt.ylabel('Standardized Mean Difference (Mean)')
-    plt.legend()
-    plt.grid(axis='y', linestyle='--')
-    plt.savefig(os.path.join(FIGURES_DIR, 'fig2_smd_balance.png'), bbox_inches='tight', dpi=300)
-    plt.close()
-    print("SMD balance plot saved.")
-    
-except ValueError as e:
-    print(f"PSM value error: {e}")
-    sys.exit(1)
-except Exception as e:
-    print(f"PSM error: {e}")
-    sys.exit(1)
-
-
-# 4. Event-Study Plot
-try:
-    # 'time_to_treat' relies on 'week' being a datetime
-    df['time_to_treat'] = (df['week'] - pd.Timestamp('2021-02-01')).dt.days / 7
-    mean_by_time = df.groupby('time_to_treat')['y'].mean().reset_index()
-    
-    plt.figure(figsize=(10, 6))
-    # Plot trend for treated and control groups separately for better visualization of parallel trend assumption
-    sns.lineplot(data=df, x='time_to_treat', y='y', hue='Treat', ci=None, marker='o', palette='viridis')
-    plt.axvline(0, color='k', linestyle='--', label='Intervention (Week 0)')
-    plt.title('Event-Study: Outcome Trends Relative to Intervention')
-    plt.xlabel('Weeks Relative to Treatment')
-    plt.ylabel('Mean Incidence (y)')
-    plt.legend(title='Group')
-    plt.grid(axis='y', linestyle=':')
-    plt.savefig(os.path.join(FIGURES_DIR, 'fig1_event_study.png'), bbox_inches='tight', dpi=300)
-    plt.close()
-    print("Event-study plot saved.")
-except KeyError as e:
-    print(f"Event-study key error: {e}")
-    sys.exit(1)
-except Exception as e:
-    print(f"Event-study error: {e}")
-    sys.exit(1)
-
-# 5. Bayesian Structural Time Series (BSTS) with CausalImpact
-try:
-    # BSTS requires a single time series for the treated group and one for controls.
-    # For this example, we assume the treated unit is the average of treated regions
-    # and the counterfactual is built using the average of control regions.
-    
-    # Filter the treated data (assuming all treated regions are treated from 2021-02-01)
-    treated_data = df[df['Treat'] == 1].groupby('week')['y'].mean()
-    control_data = df[df['Treat'] == 0].groupby('week')['y'].mean()
-    
-    # Align the two series on the common 'week' index
-    data_ci = pd.DataFrame({'y': treated_data, 'control': control_data}).dropna()
-    
-    # Define time periods using the pandas DatetimeIndex, not timestamps or dates directly
-    time_series = data_ci.index
-    pre_period_end = pd.Timestamp('2021-02-01') - pd.Timedelta(days=1)
-    
-    # Pre-period: Start to the day before intervention
-    pre_period = [time_series.min(), pre_period_end]
-    # Post-period: Intervention day to end
-    post_period = [pd.Timestamp('2021-02-01'), time_series.max()]
-
-    print("\n--- Running CausalImpact (BSTS) ---")
-    impact = CausalImpact(data_ci, pre_period, post_period, model_args={'seed': 42})
-    
-    print(impact.summary())
-    impact.plot()
-    
-    # matplotlib figure handling for causalimpact plot
-    plt.gcf().savefig(os.path.join(FIGURES_DIR, 'fig_causalimpact.png'), bbox_inches='tight', dpi=300)
-    plt.close()
-    print("BSTS plot saved.")
-    
-except ValueError as e:
-    print(f"BSTS value error: {e}")
-    print("Note: CausalImpact requires properly formatted and aligned time series data.")
-    sys.exit(1)
-except Exception as e:
-    print(f"BSTS error: {e}")
-    sys.exit(1)
-
-# 6. Outcome Trends (Now redundant with Event-Study but kept for completeness)
-try:
-    plt.figure(figsize=(10, 6))
-    sns.lineplot(data=df, x='week', y='y', hue='Treat', errorbar=None) # errorbar=None replaces ci=None in recent seaborn
-    plt.axvline(pd.Timestamp('2021-02-01'), color='r', linestyle='--', label='Intervention')
-    plt.title('Outcome Trends: Treated vs. Control Groups')
-    plt.ylabel('Incidence Rate (y)')
-    plt.xlabel('Week')
-    plt.legend(title='Treatment Group')
-    plt.grid(axis='y', linestyle=':')
-    plt.savefig(os.path.join(FIGURES_DIR, 'fig0_outcome_trends.png'), bbox_inches='tight', dpi=300)
-    plt.close()
-    print("Outcome trends plot saved.")
-except Exception as e:
-    print(f"Outcome trends error: {e}")
-    sys.exit(1)
-
-# 7. Placeholder Functions for Enhancements
-def bootstrap_did(data):
-    n_boot = 100
-    boots = []
-    # Ensure data columns are correctly named for the OLS formula
-    temp_data = data.rename(columns={'y': 'incidence', 'Treat': 'treated', 'Post': 'post'})
-    for _ in range(n_boot):
-        boot_data = temp_data.sample(frac=1, replace=True)
-        # Using smf.ols for easier formula handling
-        model = smf.ols('incidence ~ treated * post', data=boot_data).fit()
-        boots.append(model.params['treated:post'])
-    return np.mean(boots), np.std(boots)
-
-def run_ml_causal(data):
-    from sklearn.linear_model import LinearRegression
-    
-    # Prepare data for ML model
-    temp_data = data.rename(columns={'y': 'incidence', 'Treat': 'treated', 'Post': 'post'})
-    # Features: treated, post, region (dummy encoded)
-    X = pd.get_dummies(temp_data.drop(columns=['incidence', 'week']), drop_first=True)
-    y = temp_data['incidence']
-    
-    # Train model
-    model = LinearRegression().fit(X, y)
-    
-    # Simplified ATT estimation (coefficient for 'treated')
-    # This is highly simplified and only works if 'treated' is a feature in the model,
-    # and ignores interaction effects.
+    agg = df.sort_values("week").groupby("week", as_index=False)["incidence"].mean()
     try:
-        att = model.coef_[X.columns.get_loc('treated')]
-    except KeyError:
-        # If 'treated' wasn't used as a dummy or was dropped (e.g. if region was the only feature)
-        att = np.nan 
-        print("Warning: 'treated' column not found in ML features for ATT calculation.")
-    return att
+        bsts_att = try_rpy2_path(agg)
+    except Exception:
+        bsts_att = try_rscript_path(agg)
+except Exception as e:
+    bsts_reason = "BSTS via rpy2/Rscript failed: " + str(e)
 
-# 8. Run Enhancements
-print("\n--- Running Enhancements ---")
-# Data is already prepared in 'df' with the correct column names (y, Treat, Post)
-data = df.copy() 
-boot_mean, boot_std = bootstrap_did(data)
-ml_att = run_ml_causal(data)
-print(f"Bootstrap ATT: {boot_mean:.3f} (SD: {boot_std:.3f})")
-print(f"ML Causal ATT: {ml_att:.3f}")
-
-# 9. HTML Report (Removed to avoid syntax warnings for now)
-print("\nHTML report generation skipped to avoid syntax warnings. Update manually if needed.")
+# --- Save results ---
+out = {
+    "did_att": did_att,
+    "did_se": did_se,
+    "psm_att": (None if psm_att is None or (isinstance(psm_att, float) and np.isnan(psm_att)) else float(psm_att)),
+    "bsts_att": bsts_att,
+    "meta": {
+        "psm_reason": psm_reason,
+        "psm_diagnostics": psm_diag,
+        "bsts_reason": bsts_reason,
+        "n_rows": int(len(df)),
+        "n_regions": int(df["region"].nunique()),
+    },
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+}
+(results_dir / "results.json").write_text(json.dumps(out, indent=2))
+print(json.dumps(out, indent=2))
+PY
