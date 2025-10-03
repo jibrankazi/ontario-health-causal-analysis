@@ -16,11 +16,12 @@
       "n_treat_pre_cs": 220,
       "n_ctrl_pre_cs": 1194,
       "caliper": 0.05187570841162145,
+      "caliper_ps_limit": 0.012968927102905363,
       "n_matched": 220
     },
-    "bsts_reason": "R/rpy2 or CausalImpact not available, or failed to run.",
+    "bsts_reason": "BSTS via Rscript failed: float() argument must be a string or a real number, not 'NoneType'",
     "n_rows": 4760,
     "n_regions": 34
   },
-  "timestamp": "2025-10-03T00:14:45.377937+00:00"
+  "timestamp": "2025-10-03T05:43:24.267925+00:00"
 }
