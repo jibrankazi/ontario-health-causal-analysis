@@ -21,6 +21,7 @@ What is the causal impact of Ontario’s February 2021 public health policy on w
   - Covariates: Optional (e.g., population density, mobility).
 - **Preprocessing**: Log-transformed outcomes; no missing data.
 - **File**: `data/ontario_cases.csv` (configured via `config.yaml`).
+- **Intervention cutoff**: Set in `config.yaml` with the `intervention_date` key (legacy `policy_date` is still supported for backwards compatibility).
 
 *Note*: Data is anonymized, adhering to ethical standards.
 
@@ -46,16 +47,7 @@ Three causal inference methods ensure robust estimation:
 ## Results
 
 | Method | ATT | SE/CI | Notes |
-|--------|-----|-------|-------|
-| DiD    | -7.8% | SE=2.1%, p=0.002 | Stable event-study effects. |
-| PSM    | -7.2% | [-10.1%, -4.3%] | SMD=0.08 post-match. |
-| BSTS   | -8.1% | [-12.5%, -3.7%] | Cumulative effect: -15.2% over 52 weeks. |
-
-### Visualizations
-
-<image-card alt="Event-Study Plot" src="figures/fig1_event_study.png" ></image-card>  
-*Figure 1: DiD event-study coefficients, showing flat pre-trends and significant post-treatment effects.*
-
+@@ -59,25 +60,35 @@ Three causal inference methods ensure robust estimation:
 <image-card alt="Balance Plot" src="figures/fig2_smd_balance.png" ></image-card>  
 *Figure 2: PSM covariate balance (SMD pre/post-matching).*
 
@@ -81,3 +73,13 @@ pip install -r requirements.txt
 
 # R (for BSTS)
 R -e 'install.packages(c("CausalImpact", "MatchIt", "tidyverse"))'
+
+# Windows: expose Rscript for the BSTS step
+R_BASE="/c/Program Files/R"  # adjust if installed elsewhere
+R_HOME="$(ls -1d "$R_BASE"/R-* | sort -V | tail -n1)"
+export R_HOME="$R_HOME"
+export PATH="$R_HOME/bin/x64:$R_HOME/bin:$PATH"
+
+# Optional: bake the path into config.yaml so the helpers find it automatically
+# r_home: "C:/Program Files/R/R-4.5.1"
+# rscript_path: "C:/Program Files/R/R-4.5.1/bin/Rscript.exe"
