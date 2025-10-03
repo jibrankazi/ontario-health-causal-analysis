@@ -214,7 +214,7 @@ def _bsts_via_rscript(agg_df: pd.DataFrame) -> float:
         subprocess.check_call(["Rscript", r_script.as_posix()])
         out = json.loads(out_p.read_text())
         return float(out["bsts_att"])
-    keys = ("did_att", "did_se", "psm_att", "bsts_att")
+    keys = ("did_att", "did_se", "psm_att", "impact_att")
     ok = True
     for key in keys:
         if not _close(cur.get(key), exp.get(key)):
