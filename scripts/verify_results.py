@@ -1,7 +1,5 @@
 import json, os, random, tempfile, subprocess
 from datetime import datetime, timezone
-"""Compare current results with a locked baseline using a tolerance."""
-import json, math
 from pathlib import Path
 import numpy as np
 
@@ -61,6 +59,7 @@ did_se  = float(did.bse.get("treat_post", float("nan")))
 # ---------------------------
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import NearestNeighbors
+from __future__ import annotations
 
 psm_att = None
 psm_reason = None
@@ -106,16 +105,23 @@ try:
     n_treat_cs = int(pre_cs["treated"].sum())
     n_ctrl_cs  = int((1 - pre_cs["treated"]).sum())
     psm_diag.update(n_treat_pre_cs=n_treat_cs, n_ctrl_pre_cs=n_ctrl_cs)
+import json
+import math
+import sys
+from pathlib import Path
 
     if n_treat_cs == 0 or n_ctrl_cs == 0:
         psm_reason = "Common-support filter removed all treated or control units; skipping PSM."
         raise RuntimeError(psm_reason)
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 
     # Caliper based on 0.2 * SD(logit(ps))
     eps = 1e-6
     logit = np.log(np.clip(pre_cs["ps"], eps, 1 - eps)) - np.log(1 - np.clip(pre_cs["ps"], eps, 1 - eps))
     caliper = 0.2 * float(np.nanstd(logit))
     psm_diag.update(caliper=caliper)
+from shared import ROOT as PROJECT_ROOT
 
     # 1-NN with replacement on controls
     controls = pre_cs[pre_cs["treated"] == 0].copy()
@@ -124,6 +130,8 @@ try:
     nn.fit(controls[["ps"]].to_numpy())
     dist, idx = nn.kneighbors(treats[["ps"]].to_numpy())
     dist = dist.flatten(); idx = idx.flatten()
+CURRENT = PROJECT_ROOT / "results" / "results.json"
+EXPECTED = PROJECT_ROOT / "results" / "expected_results.json"
 
     # Simple ps-scale caliper gate (pragmatic bound)
     ps_pairs = []
@@ -136,6 +144,17 @@ try:
     if len(ps_pairs) == 0:
         psm_reason = "No matches within caliper; skipping PSM."
         raise RuntimeError(psm_reason)
+def _close(a: float | None, b: float | None, tol: float = 1e-6) -> bool:
+    if a is None or b is None:
+        return a == b
+    try:
+        af = float(a)
+        bf = float(b)
+    except (TypeError, ValueError):
+        return a == b
+    if math.isnan(af) and math.isnan(bf):
+        return True
+    return abs(af - bf) <= tol * max(1.0, abs(bf))
 
     # Post-period ATT using matched sets
     post = df[df["post"] == 1].copy()
@@ -153,12 +172,18 @@ try:
 except Exception:
     # leave psm_att as None; reason is recorded below
     pass
+def main() -> int:
+    if not EXPECTED.exists():
+        print("No expected_results.json yet. Create it after reviewing current results.")
+        return 2
 
 # ---------------------------
 # BSTS / CausalImpact via Rscript (Windows-friendly)
 # ---------------------------
 bsts_att = None
 bsts_reason = None
+    cur = json.loads(CURRENT.read_text())
+    exp = json.loads(EXPECTED.read_text())
 
 def _bsts_via_rscript(agg_df: pd.DataFrame) -> float:
     """
@@ -189,6 +214,12 @@ def _bsts_via_rscript(agg_df: pd.DataFrame) -> float:
         subprocess.check_call(["Rscript", r_script.as_posix()])
         out = json.loads(out_p.read_text())
         return float(out["bsts_att"])
+    keys = ("did_att", "did_se", "psm_att", "bsts_att")
+    ok = True
+    for key in keys:
+        if not _close(cur.get(key), exp.get(key)):
+            print(f"Mismatch for {key}: got {cur.get(key)} expected {exp.get(key)}")
+            ok = False
 
 try:
     # Aggregate to weekly mean incidence for univariate CausalImpact
@@ -196,6 +227,8 @@ try:
     bsts_att = _bsts_via_rscript(agg)
 except Exception as e:
     bsts_reason = f"BSTS via Rscript failed: {e}"
+    print("OK" if ok else "FAIL")
+    return 0 if ok else 1
 
 # ---------------------------
 # Save & Print Results
@@ -217,37 +250,5 @@ out = {
 
 (results_dir / "results.json").write_text(json.dumps(out, indent=2))
 print(json.dumps(out, indent=2))
-ROOT = Path(__file__).resolve().parents[1]
-CUR = ROOT / "results" / "results.json"
-EXP = ROOT / "results" / "expected_results.json"
-
-def _close(a, b, tol: float = 1e-6) -> bool:
-    if a is None or b is None:
-        return a == b
-    try:
-        af = float(a); bf = float(b)
-        if math.isnan(af) and math.isnan(bf):
-            return True
-        return abs(af - bf) <= tol * max(1.0, abs(bf))
-    except Exception:
-        return a == b
-
-def main() -> int:
-    cur = json.loads(CUR.read_text())
-    if not EXP.exists():
-        print("No expected_results.json yet. Create it after reviewing current results.")
-        return 2
-    exp = json.loads(EXP.read_text())
-
-    keys = ["did_att", "did_se", "psm_att", "bsts_att"]
-    ok = True
-    for k in keys:
-        if not _close(cur.get(k), exp.get(k)):
-            print(f"Mismatch for {k}: got {cur.get(k)} expected {exp.get(k)}")
-            ok = False
-
-    print("OK" if ok else "FAIL")
-    return 0 if ok else 1
-
 if __name__ == "__main__":
     raise SystemExit(main())
