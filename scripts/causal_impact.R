@@ -191,8 +191,13 @@ z_custom <- zoo::zoo(cbind(y, X), order.by = df_ci$week)
 
 # --- Custom BSTS Model (Robust Priors/AR) --------------------------------
 ss <- list()
-# Tighter level prior helps shrink wandering trends
-ss <- bsts::AddLocalLevel(ss, y, sigma.prior = bsts::SdPrior(0.05, sample.size = 32))
+# Local level with a version-safe prior
+if ("SdPrior" %in% getNamespaceExports("bsts")) {
+  ss <- bsts::AddLocalLevel(ss, y, sigma.prior = bsts::SdPrior(0.05, sample.size = 32))
+} else {
+  # Older bsts: fall back to default prior
+  ss <- bsts::AddLocalLevel(ss, y)
+}
 ss <- bsts::AddSeasonal(ss, y, nseasons = 52)    # weekly seasonality
 # Modest AR helps when residual autocorr is visible
 ss <- bsts::AddAutoAr(ss, y, lags = 1:2)
