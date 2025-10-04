@@ -1,23 +1,16 @@
+name: validate-results
 on:
   push:
-    branches: ["main"]
   pull_request:
 
 jobs:
-  validate:
+  run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show HEAD + file list (pre)
-        run: |
-          git log -1 --oneline
-          echo "::group::tree -L 2 (pre)"
-          sudo apt-get update >/dev/null 2>&1 || true
-          sudo apt-get install -y tree >/dev/null 2>&1 || true
-          tree -L 2 || true
-          echo "::endgroup::"
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
@@ -25,51 +18,45 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install nbconvert jupyter pycausalimpact seaborn matplotlib statsmodels scikit-learn pandas numpy
 
-      - name: Run analysis (and print summary)
+      - name: Verify official data presence & shape
         run: |
-          set -e
+          python - << 'PY'
+          import pandas as pd, json, sys
+          df = pd.read_csv("data/ontario_cases.csv")
+          need = {"week","region","incidence","treated"}
+          miss = need - set(df.columns)
+          assert not miss, f"Missing columns: {miss}"
+          pd.to_datetime(df["week"])  # ensure parseable
+          print("Data OK:", len(df), "rows")
+          PY
+
+      - name: Run analysis
+        run: |
           mkdir -p results figures
-          python run_analysis.py
-          echo "::group::results.json"
-          python - << 'PY'
-import json
-import os
+          python -m src.run_analysis
 
-p = "results/results.json"
-assert os.path.exists(p), f"Missing {p}"
-with open(p) as f:
-    data = json.load(f)
-print(json.dumps(data, indent=2))
-PY
-          echo "::endgroup::"
-
-      - name: Sanity checks (numeric & finite)
+      - name: Validate results JSON contract
         run: |
           python - << 'PY'
-import json
-import math
-with open("results/results.json") as f:
-    res = json.load(f)
-for k in ("did_att", "did_se", "did_p", "psm_att"):
-    if k in res:
-        v = res[k]
-        assert isinstance(v, (int, float)) and math.isfinite(v), f"{k} not finite: {v}"
-print("Sanity OK")
-PY
+          import json, math, sys
+          res = json.load(open("results/results.json"))
+          keys = ["did","psm","bsts","artifacts","metadata"]
+          for k in keys:
+            assert k in res, f"Missing top-level key: {k}"
+          def finite_or_none(x): 
+            return (x is None) or (isinstance(x,(int,float)) and math.isfinite(x))
+          assert finite_or_none(res["did"].get("att"))
+          assert finite_or_none(res["psm"].get("att"))
+          assert finite_or_none(res["bsts"].get("att"))
+          print("results.json contract OK")
+          PY
 
-      - name: Show tree (post)
-        run: |
-          echo "::group::tree -L 3 (post)"
-          tree -L 3 || true
-          echo "::endgroup::"
-      - name: Upload artifacts (if present)
-        if: ${{ always() }}
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: analysis-artifacts
           path: |
             results/**
             figures/**
-          if-no-files-found: ignore
+            results/results.json
