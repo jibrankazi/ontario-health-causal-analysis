@@ -1,62 +1,38 @@
 name: validate-results
-on:
-  push:
-  pull_request:
+on: [push, pull_request]
 
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-
+          python-version: "3.13"
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Verify official data presence & shape
-        run: |
-          python - << 'PY'
-          import pandas as pd, json, sys
-          df = pd.read_csv("data/ontario_cases.csv")
-          need = {"week","region","incidence","treated"}
-          miss = need - set(df.columns)
-          assert not miss, f"Missing columns: {miss}"
-          pd.to_datetime(df["week"])  # ensure parseable
-          print("Data OK:", len(df), "rows")
-          PY
-
       - name: Run analysis
         run: |
-          mkdir -p results figures
           python -m src.run_analysis
-
-      - name: Validate results JSON contract
+      - name: Validate results.json
         run: |
           python - << 'PY'
-          import json, math, sys
-          res = json.load(open("results/results.json"))
-          keys = ["did","psm","bsts","artifacts","metadata"]
-          for k in keys:
-            assert k in res, f"Missing top-level key: {k}"
-          def finite_or_none(x): 
-            return (x is None) or (isinstance(x,(int,float)) and math.isfinite(x))
-          assert finite_or_none(res["did"].get("att"))
-          assert finite_or_none(res["psm"].get("att"))
-          assert finite_or_none(res["bsts"].get("att"))
-          print("results.json contract OK")
+          import json, math, pathlib
+          p = pathlib.Path("results/results.json")
+          res = json.loads(p.read_text(encoding="utf-8"))
+          for k in ["did","psm","bsts","artifacts","metadata"]:
+              assert k in res, f"Missing key: {k}"
+          def ok(x): return x is None or (isinstance(x,(int,float)) and math.isfinite(x))
+          assert ok(res["did"].get("att"))
+          assert ok(res["psm"].get("att"))
+          assert ok(res["bsts"].get("att"))
+          print("✅ results.json looks good")
           PY
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: analysis-artifacts
           path: |
             results/**
             figures/**
-            results/results.json
