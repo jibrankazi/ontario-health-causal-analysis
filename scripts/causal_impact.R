@@ -171,7 +171,17 @@ df_ci <- df_ci %>%
 # z <- zoo::zoo(z_data, order.by = df_ci$week)
 # NOTE: If you use PCA, comment out the next block and uncomment the PCA block above.
 
-# Final data for BSTS model (Standard after selection)
+
+# --- FINAL DATA CLEANUP AND PREP FOR BSTS ---
+# Ensures all selected columns are purely numeric and contain no NAs, 
+# which is crucial for BSTS's matrix input and fixes the "string to float: 'NA'" error.
+df_ci <- df_ci %>%
+    # Explicitly coerce selected columns to numeric
+    mutate(across(c(y, starts_with("x_")), as.numeric)) %>%
+    # Drop any remaining rows that couldn't be filled/coerced (should be rare)
+    tidyr::drop_na() 
+
+# Final data for BSTS model
 z_data <- df_ci %>% dplyr::select(-week) %>% as.matrix()
 z <- zoo::zoo(z_data, order.by = df_ci$week)
 
@@ -242,22 +252,26 @@ dev.off()
 
 cat("\nSaved:\n  ", summary_txt, "\n  ", plot_path, "\n\n")
 
-# --- write compact JSON for Python to merge ---------------------------------
+# --- Export compact JSON (for Python merge) ----------------------------------
 sum_tbl <- summary(impact)$summary
-avg_row <- sum_tbl["Average", , drop = FALSE]  # "Average" row
+rn <- rownames(sum_tbl)
 
-bsts_list <- list(
-    att = unname(as.numeric(avg_row[,"AbsEffect"])),
-    ci  = unname(c(as.numeric(avg_row[,"AbsEffect.lower"]),
-                   as.numeric(avg_row[,"AbsEffect.upper"]))),
-    p   = unname(as.numeric(avg_row[,"TailProb"])),
-    relative_effect = unname(as.numeric(avg_row[,"RelEffect"]))/100, # convert %→ proportion
-    notes = NULL)
+get_safe <- function(r, c) {
+  if (r %in% rn && c %in% colnames(sum_tbl)) as.numeric(sum_tbl[r, c]) else NA_real_}
 
-writeLines(
-    jsonlite::toJSON(bsts_list, pretty = TRUE, auto_unbox = TRUE, null = "null"),
-    file.path("results", "bsts.json"))
+att <- get_safe("AbsEffect",       "Average")
+lo  <- get_safe("AbsEffect.lower", "Average")
+hi  <- get_safe("AbsEffect.upper", "Average")
+rel <- get_safe("RelEffect",       "Average") / 100  # convert % → proportion
+# Tail probability lives in the "TailProb" column; the "Average" row is index 2 in many builds.
+p <- if ("TailProb" %in% colnames(sum_tbl)) {
+  if ("Average" %in% rn) as.numeric(sum_tbl["Average", "TailProb"]) else as.numeric(sum_tbl[2, "TailProb"])} else NA_real_
 
+dir.create("results", showWarnings = FALSE, recursive = TRUE)
+jsonlite::write_json(
+  list(att = att, ci = c(lo, hi), p = p, relative_effect = rel, notes = NULL),
+  path = file.path("results", "bsts.json"),
+  auto_unbox = TRUE, pretty = TRUE, null = "null")
 cat("Saved: results/bsts.json\n")
 
 try({
