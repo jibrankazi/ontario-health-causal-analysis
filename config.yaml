@@ -1,42 +1,50 @@
-# Configuration file for causal analysis pipeline
-# All paths are relative to project root
+# ===============================================================
+# Configuration file for Ontario Health Causal Analysis Pipeline
+# ===============================================================
 
-# Data settings
+# 📂 Data settings
+# Path to your dataset (relative to project root)
 data_path: "data/ontario_cases.csv"
 
-# Intervention/policy date (YYYY-MM-DD format)
-policy_date: "2020-10-01"
+# 🗓️ Policy / Intervention date (YYYY-MM-DD)
+# This date splits the data into pre- and post-policy periods.
+policy_date: "2020-09-15"
 
-# Covariates for propensity score matching
+# 🧮 Covariates used for Propensity Score Matching (PSM)
+# You can change or add more covariates here.
 covariates:
-  - "lag1"
-  - "lag2"
-  - "pre_mean"
+  - lag1
+  - lag2
+  - pre_mean
 
-# PSM settings
+
+# ⚖️ PSM (Propensity Score Matching) Settings
 psm:
-  caliper: 0.05           # Maximum propensity score distance for matching
-  ratio: 1                # Control-to-treated matching ratio (1:1, 2:1, etc.)
-  replace: true           # Whether to sample controls with replacement
+  caliper: 0.05      # Max allowed difference between matched units
+  ratio: 1           # Number of controls per treated unit (1:1)
+  replace: true      # Allow reusing control units
 
-# SARIMAX/Impact estimation settings
+
+# 📈 Impact Estimation Settings (SARIMAX / BSTS)
 impact:
-  min_pre_periods: 8      # Minimum pre-intervention observations required
-  alpha: 0.05             # Confidence level (0.05 = 95% CI)
-  candidate_orders:       # ARIMA orders to try (p, d, q)
+  min_pre_periods: 8    # Minimum number of observations before policy date
+  alpha: 0.05           # Confidence level (0.05 = 95% CI)
+  candidate_orders:     # ARIMA models to try (p, d, q)
     - [1, 0, 0]
     - [0, 1, 1]
     - [1, 1, 0]
     - [0, 1, 0]
     - [1, 1, 1]
 
-# Figure generation settings
+
+# 🎨 Figure Generation Settings
 figures:
   dpi: 300
   format: "png"
   style: "whitegrid"
 
-# Output settings
+
+# 💾 Output Settings
 output:
   results_dir: "results"
   figures_dir: "figures"
