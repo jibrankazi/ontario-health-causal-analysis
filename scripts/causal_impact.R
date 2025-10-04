@@ -8,19 +8,19 @@ new  <- setdiff(need, rownames(installed.packages()))
 if (length(new)) install.packages(new, repos = "https://cloud.r-project.org")
 
 suppressPackageStartupMessages({
-  library(MatchIt)
-  library(CausalImpact)
-  library(tidyverse)
-  library(ggplot2)
-  library(zoo)
-  library(broom)
-  library(bsts) # Explicitly load bsts for state specification functions
-  library(jsonlite) # Required for writing compact JSON results
+    library(MatchIt)
+    library(CausalImpact)
+    library(tidyverse)
+    library(ggplot2)
+    library(zoo)
+    library(broom)
+    library(bsts) # Explicitly load bsts for state specification functions
+    library(jsonlite) # Required for writing compact JSON results
 })
 
 # --- Config ------------------------------------------------------------------
 data_path   <- "data/ontario_cases.csv"
-policy_date <- as.Date("2021-02-01")     # adjust if needed
+policy_date <- as.Date("2021-02-01")      # adjust if needed
 
 # Output
 fig_dir <- "figures"; dir.create(fig_dir,  showWarnings = FALSE, recursive = TRUE)
@@ -35,7 +35,7 @@ df <- read.csv(data_path, stringsAsFactors = FALSE)
 df[] <- lapply(df, function(x) if (is.character(x)) dplyr::na_if(x, "NA") else x)
 num_cols <- c("incidence","treated")  # add more numeric cols if you have them
 for (nm in intersect(num_cols, names(df))) {
-  df[[nm]] <- suppressWarnings(as.numeric(df[[nm]]))
+    df[[nm]] <- suppressWarnings(as.numeric(df[[nm]]))
 }
 df <- tidyr::drop_na(df) # Remove any rows containing NAs now that they are properly detected
 
@@ -44,12 +44,12 @@ missing   <- setdiff(need_cols, names(df))
 if (length(missing)) stop("Missing columns: ", paste(missing, collapse=", "))
 
 df <- df %>%
-  mutate(
-    week    = as.Date(week),
-    region  = as.factor(region),
-    treated = as.integer(treated),
-    Post    = as.integer(week >= policy_date)
-  )
+    mutate(
+        week    = as.Date(week),
+        region  = as.factor(region),
+        treated = as.integer(treated),
+        Post    = as.integer(week >= policy_date)
+    )
 
 if (any(is.na(df$week))) stop("NA in week after as.Date(); check date format.")
 if (!all(df$treated %in% c(0,1))) stop("treated must be 0/1.")
@@ -59,15 +59,15 @@ pre_df <- df %>% filter(week < policy_date)
 if (nrow(pre_df) == 0L) stop("No pre-policy rows before ", policy_date) # Safeguard
 
 pre_baseline <- pre_df %>%
-  group_by(region) %>%
-  summarise(
-    mean_incidence = mean(incidence, na.rm = TRUE),
-    treated = first(treated),
-    .groups = "drop"
-  )
+    group_by(region) %>%
+    summarise(
+        mean_incidence = mean(incidence, na.rm = TRUE),
+        treated = first(treated),
+        .groups = "drop"
+    )
 
 if (length(unique(pre_baseline$treated)) < 2L) {
-  stop("Need both treated and control regions pre-policy.")
+    stop("Need both treated and control regions pre-policy.")
 }
 
 n_treat <- sum(pre_baseline$treated == 1)
@@ -76,12 +76,12 @@ n_ctrl  <- sum(pre_baseline$treated == 0)
 match_ratio <- max(1L, min(5L, floor(n_ctrl / max(1L, n_treat))))  
 
 m.out <- matchit(
-  treated ~ mean_incidence,
-  data    = pre_baseline,
-  method = "nearest",
-  ratio  = match_ratio,
-  replace = TRUE             # allow reuse of good controls
-  # , caliper = 0.15 * sd(pre_baseline$mean_incidence, na.rm=TRUE) # uncomment to tighten matching
+    treated ~ mean_incidence,
+    data    = pre_baseline,
+    method = "nearest",
+    ratio  = match_ratio,
+    replace = TRUE           # allow reuse of good controls
+    # , caliper = 0.15 * sd(pre_baseline$mean_incidence, na.rm=TRUE) # uncomment to tighten matching
 )
 
 matched_data    <- match.data(m.out)
@@ -95,9 +95,9 @@ message("Matched control regions: ", paste(unique(control_regions), collapse=", 
 # Create the wide-format control series, ensuring clean column names (x_region)
 # name controls as x_<region> to guarantee syntactic column names
 control_wide <- df %>%
-  filter(region %in% control_regions) %>%
-  transmute(week, var = paste0("x_", as.character(region)), incidence) %>%
-  tidyr::pivot_wider(names_from = var, values_from = incidence)
+    filter(region %in% control_regions) %>%
+    transmute(week, var = paste0("x_", as.character(region)), incidence) %>%
+    tidyr::pivot_wider(names_from = var, values_from = incidence)
 
 
 # --- Regular weekly index + fill -------------------------------------------
@@ -106,20 +106,20 @@ all_weeks <- tibble(week = seq(min(df$week, na.rm = TRUE),
                                by = "week"))
 
 treated_agg <- df %>%
-  filter(region %in% treated_regions) %>%
-  group_by(week) %>%
-  summarise(y = mean(incidence, na.rm = TRUE), .groups = "drop")
+    filter(region %in% treated_regions) %>%
+    group_by(week) %>%
+    summarise(y = mean(incidence, na.rm = TRUE), .groups = "drop")
 
 df_ci <- all_weeks %>%
-  left_join(treated_agg, by = "week") %>%
-  left_join(control_wide, by = "week") %>%
-  arrange(week) %>%
-  # fill all non-week columns up/down to avoid NA breaks
-  tidyr::fill(dplyr::everything(), .direction = "downup")
+    left_join(treated_agg, by = "week") %>%
+    left_join(control_wide, by = "week") %>%
+    arrange(week) %>%
+    # fill all non-week columns up/down to avoid NA breaks
+    tidyr::fill(dplyr::everything(), .direction = "downup")
 
 # Use a more verbose check for straddling the policy date
 if (min(df_ci$week) >= policy_date || max(df_ci$week) <= policy_date) {
-  stop("Series does not straddle policy_date; fix policy_date or data.")
+    stop("Series does not straddle policy_date; fix policy_date or data.")
 }
 
 # --- Robustness Toggles ----------------------------------------------------
@@ -154,12 +154,12 @@ print(head(cors, 10))
 # --- auto-select the best controls -----------------------------------------
 keep <- names(cors)[which(abs(cors) >= 0.25)]  # tweak threshold
 if (length(keep) < 2L) {
-  warning("Few informative controls (|r|>=0.25). Keeping the top 2 anyway.")
-  keep <- names(cors)[seq_len(min(2, length(cors)))]
+    warning("Few informative controls (|r|>=0.25). Keeping the top 2 anyway.")
+    keep <- names(cors)[seq_len(min(2, length(cors)))]
 }
 
 df_ci <- df_ci %>%
-  dplyr::select(week, y, dplyr::all_of(keep))
+    dplyr::select(week, y, dplyr::all_of(keep))
 
 # --- PCA (Optional) Compression --------------------------------------------
 # If the remaining number of controls is still large (>5), you can compress them:
@@ -181,14 +181,14 @@ message("\nRunning Placebo Tests (checking pre-policy dates for false effects)..
 placebos <- as.Date(seq(policy_date - 140, policy_date - 14, by = "7 days"))
 pvals <- c()
 for (pd in placebos) {
-  # Use whole weeks for pre/post split
-  pre_p  <- c(min(df_ci$week), pd - 7)
-  post_p <- c(pd, max(df_ci$week))
-  try({
-    # Use the simple CausalImpact call for speed in placebos
-    imp <- CausalImpact(z, pre.period = pre_p, post.period = post_p, model.args = list(nseasons = 52))
-    pvals <- c(pvals, summary(imp)$summary$TailProb[2])  # "Average" row
-  }, silent = TRUE)
+    # Use whole weeks for pre/post split
+    pre_p  <- c(min(df_ci$week), pd - 7)
+    post_p <- c(pd, max(df_ci$week))
+    try({
+        # Use the simple CausalImpact call for speed in placebos
+        imp <- CausalImpact(z, pre.period = pre_p, post.period = post_p, model.args = list(nseasons = 52))
+        pvals <- c(pvals, summary(imp)$summary$TailProb[2])  # "Average" row
+    }, silent = TRUE)
 }
 print(data.frame(placebo_date = placebos, p = pvals))
 message("--- End Placebo Tests ---\n")
@@ -200,9 +200,9 @@ X <- as.matrix(df_ci %>% dplyr::select(-week, -y))
 
 # GUARD: Ensure X is a matrix even if no columns were selected.
 if (is.null(dim(X)) || ncol(X) == 0) {
-  message("No controls after selection; proceeding with univariate BSTS.")
-  # keep X as a zero-column matrix so cbind(y, X) still works:
-  X <- matrix(numeric(0), nrow = length(y), ncol = 0)
+    message("No controls after selection; proceeding with univariate BSTS.")
+    # keep X as a zero-column matrix so cbind(y, X) still works:
+    X <- matrix(numeric(0), nrow = length(y), ncol = 0)
 }
 
 ss <- list()
@@ -222,17 +222,17 @@ fit <- bsts::bsts(y ~ X,
 z_custom <- zoo::zoo(cbind(y, X), order.by = df_ci$week)
 
 impact <- CausalImpact(
-  z_custom,
-  pre.period  = pre_period,
-  post.period = post_period,
-  model.args  = list(bsts.model = fit)
+    z_custom,
+    pre.period  = pre_period,
+    post.period = post_period,
+    model.args  = list(bsts.model = fit)
 )
 
 s <- capture.output({
-  cat("=== CausalImpact summary ===\n")
-  print(summary(impact))
-  cat("\n=== CausalImpact report ===\n")
-  print(summary(impact, "report"))
+    cat("=== CausalImpact summary ===\n")
+    print(summary(impact))
+    cat("\n=== CausalImpact report ===\n")
+    print(summary(impact, "report"))
 })
 writeLines(s, summary_txt)
 
@@ -247,20 +247,20 @@ sum_tbl <- summary(impact)$summary
 avg_row <- sum_tbl["Average", , drop = FALSE]  # "Average" row
 
 bsts_list <- list(
-  att = unname(as.numeric(avg_row[,"AbsEffect"])),
-  ci  = unname(c(as.numeric(avg_row[,"AbsEffect.lower"]),
-                 as.numeric(avg_row[,"AbsEffect.upper"]))),
-  p   = unname(as.numeric(avg_row[,"TailProb"])),
-  relative_effect = unname(as.numeric(avg_row[,"RelEffect"]))/100, # convert %→ proportion
-  notes = NULL)
+    att = unname(as.numeric(avg_row[,"AbsEffect"])),
+    ci  = unname(c(as.numeric(avg_row[,"AbsEffect.lower"]),
+                   as.numeric(avg_row[,"AbsEffect.upper"]))),
+    p   = unname(as.numeric(avg_row[,"TailProb"])),
+    relative_effect = unname(as.numeric(avg_row[,"RelEffect"]))/100, # convert %→ proportion
+    notes = NULL)
 
 writeLines(
-  jsonlite::toJSON(bsts_list, pretty = TRUE, auto_unbox = TRUE, null = "null"),
-  file.path("results", "bsts.json"))
+    jsonlite::toJSON(bsts_list, pretty = TRUE, auto_unbox = TRUE, null = "null"),
+    file.path("results", "bsts.json"))
 
 cat("Saved: results/bsts.json\n")
 
 try({
-  ci_sum <- broom::tidy(impact$summary)
-  print(head(ci_sum))
+    ci_sum <- broom::tidy(impact$summary)
+    print(head(ci_sum))
 }, silent = TRUE)
