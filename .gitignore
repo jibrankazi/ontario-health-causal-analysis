@@ -4,3 +4,10 @@ figures/*
 
 reports/*
 !reports/report.html
+
+# Python build/cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
