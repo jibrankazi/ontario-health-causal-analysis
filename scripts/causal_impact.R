@@ -67,6 +67,29 @@ get_rc <- function(tbl, r, c, warn = TRUE, fail_on_missing = FALSE) {
 }
 # --- End Helper Function --------------------------------------------------
 
+# --- Parsing Helpers for CausalImpact Summary -------------------------------
+parse_point <- function(x, remove_pct = FALSE) {
+    if (is.na(x) || is.null(x)) return(NA_real_)
+    val_str <- as.character(x)
+    # Remove (s.d.) part
+    if (grepl("\\(", val_str)) {
+        val_str <- strsplit(val_str, " \\(")[[1]][1]
+    }
+    # Remove % if requested
+    if (remove_pct) val_str <- gsub("%", "", val_str)
+    as.numeric(val_str)
+}
+
+parse_ci_bounds <- function(x) {
+    if (is.na(x) || is.null(x)) return(c(NA_real_, NA_real_))
+    val_str <- gsub("\\[|\\]", "", as.character(x))
+    parts <- strsplit(val_str, ",")[[1]]
+    lower_str <- gsub("%", "", trimws(parts[1]))
+    upper_str <- gsub("%", "", trimws(parts[2]))
+    c(as.numeric(lower_str), as.numeric(upper_str))
+}
+# --- End Parsing Helpers --------------------------------------------------
+
 
 # --- Data Loading and Cleaning -----------------------------------------------
 stopifnot(file.exists(data_path))
@@ -240,12 +263,6 @@ bsts_reason <- NULL
 # --- Model Fitting and Analysis (Wrapped in tryCatch) ------------------------
 tryCatch({
     
-    # --- Custom BSTS Model (DELETED - allowing CausalImpact to build internally) ---
-    # The custom model build block was removed/commented out to ensure 
-    # compatibility with older CausalImpact versions that do not handle 
-    # the 'bsts.model' argument reliably.
-    
-    
     # --- Run Main Causal Impact Analysis ---
     # FIX: Reverting to internal model building to avoid "illegal extra args: 'bsts.model'"
     # We still specify seasonality via model.args.
@@ -272,29 +289,30 @@ tryCatch({
     cat("\nSaved:\n  ", summary_txt, "\n  ", plot_path, "\n\n")
 
     # --- Extract Compact JSON Results (using local assignment) -----------------
-    sum_tbl <- as.data.frame(summary(impact)$summary)
+    sum_mat <- impact$summary
     
-    # Use a local list for clean assignment, avoiding global assignment (<<-)
-    results <- list(
-        att_actual     = get_rc(sum_tbl, "Actual", "Average"),
-        att_pred       = get_rc(sum_tbl, "Pred", "Average"),
-        att_pred_upper = get_rc(sum_tbl, "Pred.upper", "Average"),
-        att_pred_lower = get_rc(sum_tbl, "Pred.lower", "Average"),
-        # Suppress warning for 'RelEffect' as its absence is sometimes expected
-        rel_val        = get_rc(sum_tbl, "RelEffect", "Average", warn = FALSE), 
-        p_value        = get_rc(sum_tbl, "Average", "TailProb")
-    )
+    # Find CI rows
+    ci_rows <- which(rownames(sum_mat) == "95% CI")
+    if (length(ci_rows) < 2) stop("Unexpected structure in summary matrix.")
+    pred_ci_row <- ci_rows[1]
+    abs_ci_row <- ci_rows[2]
+    
+    # Extract values using parsers
+    actual_avg <- parse_point(sum_mat["Actual", "Average"])
+    pred_avg <- parse_point(sum_mat["Prediction (s.d.)", "Average"])
+    att <- parse_point(sum_mat["Absolute effect (s.d.)", "Average"])
+    rel_val <- parse_point(sum_mat["Relative effect (s.d.)", "Average"], remove_pct = TRUE) / 100
+    
+    # CIs for absolute effect
+    abs_ci <- parse_ci_bounds(sum_mat[abs_ci_row, "Average"])
+    lo <- abs_ci[1]
+    hi <- abs_ci[2]
+    
+    # P-value
+    p <- impact$inference$TailProb
     
     # Local assignments (<-) to variables initialized outside the tryCatch
-    att <- results$att_actual - results$att_pred
-    lo  <- results$att_actual - results$att_pred_upper
-    hi  <- results$att_actual - results$att_pred_lower
-    
-    # Relative effect calculation
-    rel <- if (!is.na(results$rel_val)) results$rel_val / 100 else NA_real_
-    
-    # P-value cleanup
-    p <- if (is.finite(results$p_value)) results$p_value else NA_real_
+    # (already done above)
     
 }, error = function(e) {
     # On error, use global assignment (<<-) only for the reason variable, 
@@ -317,8 +335,8 @@ jsonlite::write_json(
   list(
     att = as.numeric(att),
     ci  = c(as.numeric(lo), as.numeric(hi)),
-    p   = if (length(p) == 1) as.numeric(p) else NA_real_,
-    relative_effect = if (is.na(rel)) NA_real_ else as.numeric(rel),
+    p   = if (length(p) == 1 && is.finite(p)) as.numeric(p) else NA_real_,
+    relative_effect = if (!is.na(rel)) as.numeric(rel) else NA_real_,
     notes = NULL,
     bsts_reason = bsts_reason # Include the error reason here
   ),
