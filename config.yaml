@@ -4,5 +4,7 @@ unit_col: "region"
 outcome_col: "incidence"
 treat_col: "treated"
 intervention_date: "2021-02-01"
-covariates: []           # add columns here if you have them, e.g., ["age","pop"]
+covariates:
+  - pre_level
+  - pre_trend
 freq: "W-MON"
