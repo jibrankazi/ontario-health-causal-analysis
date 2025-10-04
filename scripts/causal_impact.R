@@ -86,37 +86,36 @@ treated_regions <- matched_data %>% filter(treated == 1) %>% pull(region)
 control_regions <- matched_data %>% filter(treated == 0) %>% pull(region)
 
 # --- Controls: wide matrix with clean names (COVARIATES) --------------------
-# 1. Create the aggregated treated series (y)
-treated_agg <- df %>% 
-  filter(region %in% treated_regions) %>%
-  group_by(week) %>%
-  summarize(
-    y = mean(incidence, na.rm=TRUE),
-    .groups = "drop"
-  )
-
-# 2. Create the wide-format control series, ensuring clean column names (x_region)
+# Create the wide-format control series, ensuring clean column names (x_region)
 # name controls as x_<region> to guarantee syntactic column names
 control_wide <- df %>%
   filter(region %in% control_regions) %>%
   transmute(week, var = paste0("x_", as.character(region)), incidence) %>%
   tidyr::pivot_wider(names_from = var, values_from = incidence)
 
-# 3. Join the treated and control series
-df_ci <- treated_agg %>%
-  left_join(control_wide, by = "week") %>%
-  arrange(week)
 
-# 4. Fill any missing weeks and carry forward
-all_weeks <- tibble(week = seq(min(df_ci$week), max(df_ci$week), by = "week"))
+# --- Regular weekly index + fill -------------------------------------------
+all_weeks <- tibble(week = seq(min(df$week, na.rm = TRUE),
+                               max(df$week, na.rm = TRUE),
+                               by = "week"))
+
+treated_agg <- df %>%
+  filter(region %in% treated_regions) %>%
+  group_by(week) %>%
+  summarise(y = mean(incidence, na.rm = TRUE), .groups = "drop")
+
 df_ci <- all_weeks %>%
-  left_join(df_ci, by = "week") %>%
-  # Fill all time series columns (except 'week')
-  tidyr::fill(names(df_ci)[-1], .direction = "downup") 
+  left_join(treated_agg, by = "week") %>%
+  left_join(control_wide, by = "week") %>%
+  arrange(week) %>%
+  # fill all non-week columns up/down to avoid NA breaks
+  tidyr::fill(dplyr::everything(), .direction = "downup")
 
+# Use a more verbose check for straddling the policy date
 if (min(df_ci$week) >= policy_date || max(df_ci$week) <= policy_date) {
   stop("Series does not straddle policy_date; fix policy_date or data.")
 }
+
 
 # Select all data columns (y and all covariates) and convert to matrix
 z_data <- df_ci %>% select(-week) %>% as.matrix()
