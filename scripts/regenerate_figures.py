@@ -1,35 +1,35 @@
-# scripts/regenerate_figures.py
-import sys
+#!/usr/bin/env python3
+import json
 from pathlib import Path
+import pandas as pd
+import matplotlib.pyplot as plt
 
-# Add project root to sys.path for internal imports
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+RES = ROOT / "results" / "results.json"
+FIG = ROOT / "figures"
 
-try:
-    # Assuming your figure generation logic lives here
-    # You may need to adjust this import based on your actual file structure
-    from src.analysis import figures 
-except ImportError:
-    print("Error: Could not import figure generation module.")
-    print("Please ensure your figure generation logic is importable (e.g., in src/analysis/figures.py).")
-    sys.exit(1)
+def main():
+    if not RES.exists():
+        raise SystemExit("results/results.json not found. Run: python src/run_analysis.py")
 
+    res = json.loads(RES.read_text())
+    did  = res.get("did", {}).get("att")
+    psm  = res.get("psm", {}).get("att")
+    bsts = res.get("bsts", {}).get("att")
 
-def regenerate_figures():
-    """Runs the figure generation logic."""
-    print("--- Regenerating Figures from results/ ---")
-    try:
-        # Assuming the function takes no arguments and reads from 'results/results.json'
-        figures.generate_all_figures() 
-        print("--- Figure Regeneration Complete (Saved to figures/) ---")
-    except Exception as e:
-        print(f"Error during figure regeneration: {e}")
-        sys.exit(1)
+    s = pd.Series({"DiD": did, "PSM": psm, "BSTS": bsts})
+
+    FIG.mkdir(parents=True, exist_ok=True)
+    ax = s.plot(kind="bar")
+    ax.set_title("Estimated Treatment Effects (ATT)")
+    ax.set_ylabel("ATT")
+    for i, v in enumerate(s.values):
+        label = "NA" if v is None else f"{v:.2f}"
+        ax.text(i, (v if v is not None else 0), label, ha="center", va="bottom")
+    plt.tight_layout()
+    plt.savefig(FIG / "att_summary.png")
+    plt.close()
+    print("✓ Figures saved to figures/att_summary.png")
 
 if __name__ == "__main__":
-    # This is a placeholder for the actual function call
-    # You must ensure the actual function is implemented in your src/
-    print("WARNING: This script requires a 'generate_all_figures()' function to be implemented in your source code.")
-    
-    # In a real environment, you would uncomment the line below:
-    # regenerate_figures()
+    main()
