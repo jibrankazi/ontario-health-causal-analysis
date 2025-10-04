@@ -14,39 +14,36 @@ policy_date: "2021-02-01"
 # Covariates for propensity score matching
 # Leave empty to auto-detect from data
 covariates:
-  - "pre_level"    # Pre-intervention average incidence
-  - "pre_trend"    # Pre-intervention trend
-  # Add other numeric covariates as needed:
-  # - "population"
-  # - "density"
-  # - "baseline_rate"
+  - "lag1"
+  - "lag2"
+  - "pre_mean"
 
 # PSM settings
 psm:
-  caliper: 0.05          # Maximum propensity score distance for matching
-  ratio: 1               # Control-to-treated matching ratio (1:1, 2:1, etc.)
-  replace: true          # Whether to sample controls with replacement
+  caliper: 0.05          # Maximum propensity score distance for matching
+  ratio: 1               # Control-to-treated matching ratio (1:1, 2:1, etc.)
+  replace: true          # Whether to sample controls with replacement
 
 # SARIMAX/Impact estimation settings
 impact:
-  min_pre_periods: 8     # Minimum pre-intervention observations required
-  alpha: 0.05            # Confidence level (0.05 = 95% CI)
-  candidate_orders:      # ARIMA orders to try (p, d, q)
-    - [1, 0, 0]
-    - [0, 1, 1]
-    - [1, 1, 0]
-    - [0, 1, 0]
-    - [1, 1, 1]
+  min_pre_periods: 8     # Minimum pre-intervention observations required
+  alpha: 0.05            # Confidence level (0.05 = 95% CI)
+  candidate_orders:      # ARIMA orders to try (p, d, q)
+    - [1, 0, 0]
+    - [0, 1, 1]
+    - [1, 1, 0]
+    - [0, 1, 0]
+    - [1, 1, 1]
 
 # Figure generation settings
 figures:
-  dpi: 300               # Resolution for saved figures
-  format: "png"          # Figure format (png, pdf, svg)
-  style: "whitegrid"     # Seaborn style
+  dpi: 300               # Resolution for saved figures
+  format: "png"          # Figure format (png, pdf, svg)
+  style: "whitegrid"     # Seaborn style
 
 # Output settings
 output:
-  results_dir: "results"
-  figures_dir: "figures"
-  save_diagnostics: true  # Save detailed diagnostics
-  verbose: true           # Print progress messages
+  results_dir: "results"
+  figures_dir: "figures"
+  save_diagnostics: true  # Save detailed diagnostics
+  verbose: true           # Print progress messages
