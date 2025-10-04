@@ -268,8 +268,7 @@ if __name__ == "__main__":
     print("[RUN] unified-writer about to merge & write results/results.json")
 
     # === Unified results writer (drop-in) =======================================
-    from pathlib import Path
-    import json, pandas as pd
+    # The necessary modules (json, Path, pandas) are already imported globally.
 
     # Build 'out' from your existing variables
     out = {
