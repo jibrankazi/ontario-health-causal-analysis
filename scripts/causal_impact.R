@@ -2,8 +2,8 @@
 # Run from REPO ROOT:
 #    Rscript scripts/causal_impact.R
 
-# Adding 'bsts' explicitly for custom model building
-need <- c("MatchIt","CausalImpact","tidyverse","ggplot2","zoo","broom", "bsts") 
+# Adding 'bsts' and 'jsonlite' for custom model building and results export
+need <- c("MatchIt","CausalImpact","tidyverse","ggplot2","zoo","broom", "bsts", "jsonlite") 
 new  <- setdiff(need, rownames(installed.packages()))
 if (length(new)) install.packages(new, repos = "https://cloud.r-project.org")
 
@@ -15,6 +15,7 @@ suppressPackageStartupMessages({
   library(zoo)
   library(broom)
   library(bsts) # Explicitly load bsts for state specification functions
+  library(jsonlite) # Required for writing compact JSON results
 })
 
 # --- Config ------------------------------------------------------------------
@@ -227,6 +228,25 @@ plot(impact)
 dev.off()
 
 cat("\nSaved:\n  ", summary_txt, "\n  ", plot_path, "\n\n")
+
+# --- write compact JSON for Python to merge ---------------------------------
+sum_tbl <- summary(impact)$summary
+avg_row <- sum_tbl["Average", , drop = FALSE]  # "Average" row
+
+bsts_list <- list(
+  att = unname(as.numeric(avg_row[,"AbsEffect"])),
+  ci  = unname(c(as.numeric(avg_row[,"AbsEffect.lower"]),
+                 as.numeric(avg_row[,"AbsEffect.upper"]))),
+  p   = unname(as.numeric(avg_row[,"TailProb"])),
+  relative_effect = unname(as.numeric(avg_row[,"RelEffect"]))/100, # convert %→ proportion
+  notes = NULL)
+
+writeLines(
+  jsonlite::toJSON(bsts_list, pretty = TRUE, auto_unbox = TRUE, null = "null"),
+  file.path("results", "bsts.json"))
+
+cat("Saved: results/bsts.json\n")
+
 try({
   ci_sum <- broom::tidy(impact$summary)
   print(head(ci_sum))
