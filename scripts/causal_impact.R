@@ -240,33 +240,20 @@ bsts_reason <- NULL
 # --- Model Fitting and Analysis (Wrapped in tryCatch) ------------------------
 tryCatch({
     
-    # --- Custom BSTS Model (version-safe state specification) ----------------
-    ss <- list()
-    # Local level: using default prior for maximum version compatibility
-    ss <- bsts::AddLocalLevel(ss, y)
+    # --- Custom BSTS Model (DELETED - allowing CausalImpact to build internally) ---
+    # The custom model build block was removed/commented out to ensure 
+    # compatibility with older CausalImpact versions that do not handle 
+    # the 'bsts.model' argument reliably.
     
-    # Weekly seasonality
-    ss <- bsts::AddSeasonal(ss, y, nseasons = 52) 
     
-    # Optional AR term - use a single scalar for 'lags' for compatibility
-    if ("AddAutoAr" %in% getNamespaceExports("bsts")) {
-      # Use a single integer (e.g., AR(2)). DO NOT use a vector (like 1:2).
-      ss <- bsts::AddAutoAr(ss, y, lags = 2)
-    }
-
-    niter <- 5000  # raise for tighter posteriors if needed
-    fit <- bsts::bsts(y ~ X,
-                      state.specification = ss,
-                      niter = niter,
-                      expected.model.size = min(15, ncol(X) + 1))
-
-
     # --- Run Main Causal Impact Analysis ---
+    # FIX: Reverting to internal model building to avoid "illegal extra args: 'bsts.model'"
+    # We still specify seasonality via model.args.
     impact <- CausalImpact(
         z_custom,
         pre.period  = pre_period,
         post.period = post_period,
-        model.args  = list(bsts.model = fit)
+        model.args  = list(nseasons = 52) 
     )
     
     # --- Save Summary and Plot (only on success) --------------------------------
