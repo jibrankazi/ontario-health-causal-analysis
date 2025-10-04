@@ -51,37 +51,41 @@ df <- df %>%
 if (any(is.na(df$week))) stop("NA in week after as.Date(); check date format.")
 if (!all(df$treated %in% c(0,1))) stop("treated must be 0/1.")
 
-# Match on pre-policy average incidence (by region)
+# --- Matching on pre-policy baseline (ROBUST) ------------------------------
 pre_df <- df %>% filter(week < policy_date)
-if (nrow(pre_df) == 0L) stop("No pre-policy rows before ", policy_date)
+if (nrow(pre_df) == 0L) stop("No pre-policy rows before ", policy_date) # Safeguard
 
 pre_baseline <- pre_df %>%
   group_by(region) %>%
-  summarize(
+  summarise(
     mean_incidence = mean(incidence, na.rm = TRUE),
     treated = first(treated),
     .groups = "drop"
   )
+
 if (length(unique(pre_baseline$treated)) < 2L) {
   stop("Need both treated and control regions pre-policy.")
 }
 
-m.out <- matchit(treated ~ mean_incidence,
-                 data  = pre_baseline,
-                 method = "nearest",
-                 # Use max controls, but at least 1, for better covariates
-                 ratio = ceiling(nrow(pre_baseline %>% filter(treated == 0)) / 
-                                 nrow(pre_baseline %>% filter(treated == 1))
-                                 ) 
-                 )
+n_treat <- sum(pre_baseline$treated == 1)
+n_ctrl  <- sum(pre_baseline$treated == 0)
+# Cap the ratio to a max of 5:1 for safety and prevent poor fit if n_ctrl is huge
+match_ratio <- max(1L, min(5L, floor(n_ctrl / max(1L, n_treat))))  
 
-# Extract treated region(s) and all matched control region(s)
-matched_data <- match.data(m.out)
+m.out <- matchit(
+  treated ~ mean_incidence,
+  data   = pre_baseline,
+  method = "nearest",
+  ratio  = match_ratio,
+  replace = TRUE                     # allow reuse of good controls
+  # , caliper = 0.15 * sd(pre_baseline$mean_incidence, na.rm=TRUE) # uncomment to tighten matching
+)
+
+matched_data   <- match.data(m.out)
 treated_regions <- matched_data %>% filter(treated == 1) %>% pull(region)
 control_regions <- matched_data %>% filter(treated == 0) %>% pull(region)
 
-# --- NEW LOGIC: Prepare Multiple Covariates (as requested in B) ---
-
+# --- Controls: wide matrix with clean names (COVARIATES) --------------------
 # 1. Create the aggregated treated series (y)
 treated_agg <- df %>% 
   filter(region %in% treated_regions) %>%
@@ -91,12 +95,12 @@ treated_agg <- df %>%
     .groups = "drop"
   )
 
-# 2. Create the wide-format control series (x1, x2, etc.)
+# 2. Create the wide-format control series, ensuring clean column names (x_region)
+# name controls as x_<region> to guarantee syntactic column names
 control_wide <- df %>%
   filter(region %in% control_regions) %>%
-  select(week, region, incidence) %>%
-  # Pivot to create a separate column (covariate) for each matched control region
-  pivot_wider(names_from = region, values_from = incidence)
+  transmute(week, var = paste0("x_", as.character(region)), incidence) %>%
+  tidyr::pivot_wider(names_from = var, values_from = incidence)
 
 # 3. Join the treated and control series
 df_ci <- treated_agg %>%
@@ -121,7 +125,7 @@ z_data <- df_ci %>% select(-week) %>% as.matrix()
 # z will now contain Y (treated mean) and multiple X covariates (matched control regions)
 z <- zoo(z_data, order.by = df_ci$week)
 
-# Define periods (using the full extent of the data for post-period, as requested in A)
+# Define periods (using the full extent of the data for post-period)
 pre_period  <- c(min(df_ci$week), policy_date - 7)
 post_period <- c(policy_date,    max(df_ci$week))
 
