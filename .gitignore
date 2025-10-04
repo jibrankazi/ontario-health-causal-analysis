@@ -1,25 +1,6 @@
-# Python artifacts
-__pycache__/
-*.pyc
-*.pyo
-*.log
+# Ignore generated outputs but keep the two we want tracked in Git
+figures/*
+!figures/att_summary.png
 
-# Virtual environment
-.venv/
-env/
-
-# Build & packaging
-*.egg-info/
-dist/
-build/
-
-# OS / IDE junk
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-
-# Generated analysis artifacts
-results/
-figures/
-reports/
+reports/*
+!reports/report.html
