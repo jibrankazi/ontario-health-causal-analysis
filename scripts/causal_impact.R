@@ -254,18 +254,23 @@ cat("\nSaved:\n  ", summary_txt, "\n  ", plot_path, "\n\n")
 
 # --- Export compact JSON (for Python merge) ----------------------------------
 sum_tbl <- summary(impact)$summary
-rn <- rownames(sum_tbl)
 
-get_safe <- function(r, c) {
-  if (r %in% rn && c %in% colnames(sum_tbl)) as.numeric(sum_tbl[r, c]) else NA_real_}
-
-att <- get_safe("AbsEffect",       "Average")
-lo  <- get_safe("AbsEffect.lower", "Average")
-hi  <- get_safe("AbsEffect.upper", "Average")
-rel <- get_safe("RelEffect",       "Average") / 100  # convert % → proportion
-# Tail probability lives in the "TailProb" column; the "Average" row is index 2 in many builds.
+get_cell <- function(row_name, col_name) {
+  if (row_name %in% rownames(sum_tbl) && col_name %in% colnames(sum_tbl)) {
+    as.numeric(sum_tbl[row_name, col_name])
+  } else {
+    NA_real_
+  }}# Rows are "Average" / "Cumulative"; columns are metric names.
+att <- get_cell("Average", "AbsEffect")
+lo  <- get_cell("Average", "AbsEffect.lower")
+hi  <- get_cell("Average", "AbsEffect.upper")
+rel <- get_cell("Average", "RelEffect")
+if (!is.na(rel)) rel <- rel / 100  # convert % → proportion
+# p-value column is usually "TailProb"; fall back to "p" if present
 p <- if ("TailProb" %in% colnames(sum_tbl)) {
-  if ("Average" %in% rn) as.numeric(sum_tbl["Average", "TailProb"]) else as.numeric(sum_tbl[2, "TailProb"])} else NA_real_
+  get_cell("Average", "TailProb")} else if ("p" %in% colnames(sum_tbl)) {
+  get_cell("Average", "p")} else {
+  NA_real_}
 
 dir.create("results", showWarnings = FALSE, recursive = TRUE)
 jsonlite::write_json(
