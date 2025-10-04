@@ -271,10 +271,13 @@ lo  <- get_rc("Actual", "Average") - get_rc("Pred.upper", "Average")
 hi  <- get_rc("Actual", "Average") - get_rc("Pred.lower", "Average")
 # Relative effect: may not be in the table; leave NA if absent
 rel <- NA_real_
-# p-value: not always present; try, else NA
+# p-value: try TailProb, else NA
 p <- if ("TailProb" %in% colnames(sum_tbl) && "Average" %in% rownames(sum_tbl)) {
   as.numeric(sum_tbl["Average", "TailProb"])} else {
   NA_real_}
+
+# Safety check: ensure p is NA_real_ if it somehow ended up as Inf/NaN
+if (!is.finite(p)) p <- NA_real_
 
 dir.create("results", showWarnings = FALSE, recursive = TRUE)
 jsonlite::write_json(
