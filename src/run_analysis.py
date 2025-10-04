@@ -7,13 +7,15 @@ from typing import Any, Mapping, Sequence, Iterable
 import numpy as np
 import pandas as pd
 import statsmodels.formula.api as smf
-from statsmodels.tsa.statespace.sarimax import SARIMAX
+# SARIMAX is still imported but only used by impact_py.py for its fallback
+# from statsmodels.tsa.statespace.sarimax import SARIMAX # Removed from top level
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import NearestNeighbors
 
 from shared import ROOT, load_config, resolve_intervention_date
-# Assuming generate_analysis_figures is defined elsewhere, like in figures.py
-# from figures import generate_analysis_figures 
+# NEW: Import the robust Python Causal Impact estimator
+from impact_py import estimate_causal_impact_python
+
 
 # Placeholder for generate_analysis_figures to allow the script to run standalone
 class Artifacts:
@@ -21,6 +23,7 @@ class Artifacts:
         self.__dict__.update(kwargs)
 
 def generate_analysis_figures(**kwargs) -> Artifacts:
+    """Mock function for figure generation."""
     print("NOTE: Figure generation skipped in this environment.")
     return Artifacts(
         event_study="figures/fig1_event_study.png",
@@ -144,50 +147,9 @@ def _run_psm(panel: pd.DataFrame, covariates: Sequence[str]) -> tuple[float | No
     return float(np.mean(diffs)), None, diag, pd.DataFrame(matched_t_list), pd.DataFrame(matched_c_list)
 
 
-def _estimate_impact_sarimax(panel: pd.DataFrame, policy_date: pd.Timestamp) -> tuple[float, tuple[float, float], list[Mapping[str, Any]]]:
-    """Impact via SARIMAX on treated-minus-control weekly difference."""
-    treated = (
-        panel[panel["treated"] == 1].groupby("week", as_index=False)["incidence"].mean().rename(columns={"incidence": "treated"})
-    )
-    control = (
-        panel[panel["treated"] == 0].groupby("week", as_index=False)["incidence"].mean().rename(columns={"incidence": "control"})
-    )
-    series = pd.merge(treated, control, on="week", how="inner").dropna().sort_values("week").reset_index(drop=True)
-    if series.empty:
-        raise RuntimeError("No overlapping treated/control weeks to construct series.")
-    series["y"] = series["treated"] - series["control"]
-
-    pre = series[series["week"] < policy_date].copy().reset_index(drop=True)
-    post = series[series["week"] >= policy_date].copy().reset_index(drop=True)
-    if pre.empty or post.empty:
-        raise RuntimeError("Pre or post period empty; check intervention_date and data coverage.")
-
-    mod = SARIMAX(pre["y"].to_numpy(float), order=(1,0,0), enforce_stationarity=False, enforce_invertibility=False)
-    fit = mod.fit(disp=False)
-    fc = fit.get_forecast(steps=len(post))
-    pred = fc.predicted_mean
-    ci = fc.conf_int(alpha=0.05).to_numpy(float)
-
-    att = float(np.mean(post["y"].to_numpy(float) - pred))
-    
-    # Re-calculate CI bounds based on the difference (y - prediction)
-    impact_diff = post["y"].to_numpy(float) - pred.to_numpy(float)
-    impact_lower = post["y"].to_numpy(float) - ci[:, 1] # Actual - Upper CI
-    impact_upper = post["y"].to_numpy(float) - ci[:, 0] # Actual - Lower CI
-    lo = float(np.mean(impact_lower))
-    hi = float(np.mean(impact_upper))
-
-    timeline: list[dict[str, Any]] = []
-    for dt, actual_y, p, l, u in zip(post["week"], post["y"], pred, ci[:, 0], ci[:, 1]):
-        timeline.append({
-            "date": dt.date().isoformat(), 
-            "actual": float(actual_y),
-            "predicted": float(p), 
-            "lower": float(l), 
-            "upper": float(u)
-        })
-        
-    return att, (lo, hi), timeline
+# Note: The original _estimate_impact_sarimax function is removed 
+# because estimate_causal_impact_python now handles the counterfactual logic, 
+# including the SARIMAX fallback.
 
 
 # --------------------------------- Main --------------------------------------
@@ -215,8 +177,8 @@ if __name__ == "__main__":
     
     # level
     lvl = (pre.groupby("region", as_index=False)["incidence"]
-             .mean().rename(columns={"incidence":"pre_level"}))
-             
+               .mean().rename(columns={"incidence":"pre_level"}))
+               
     # trend (simple OLS slope per region)
     def _slope(df: pd.DataFrame) -> float:
         # Create continuous time index in days
@@ -230,6 +192,7 @@ if __name__ == "__main__":
         # Perform OLS using numpy.linalg.lstsq: [1, x] vs y
         # We extract the slope (index 1) from the coefficients
         try:
+            # np.c_ adds a column of ones for the intercept
             b = np.linalg.lstsq(np.c_[np.ones_like(x), x], y, rcond=None)[0][1]
             return float(b)
         except Exception:
@@ -250,15 +213,21 @@ if __name__ == "__main__":
     covariates_cfg = list(cfg.get("covariates", [])) if cfg.get("covariates") else _infer_covariates(panel)
     psm_att, psm_reason, psm_diag, matched_t, matched_c = _run_psm(panel, covariates_cfg)
 
-    # 3. Run SARIMAX impact
-    try:
-        impact_att, impact_ci, impact_series = _estimate_impact_sarimax(panel, policy_date)
-    except RuntimeError as e:
-        print(f"SARIMAX failed: {e}")
-        impact_att, impact_ci, impact_series = None, (None, None), []
+    # --- Python-only CausalImpact / BSTS-style impact --------------------------
+    impact = estimate_causal_impact_python(panel, policy_date)
+    
+    # Use this in the unified writer below
+    bsts_att = impact.att
+    bsts_ci = [impact.ci[0], impact.ci[1]]
+    bsts_p = impact.p
+    bsts_rel = impact.relative_effect
+    bsts_notes = impact.notes
+    impact_timeline = impact.timeline
+    impact_plot = impact.plot_path
+    impact_txt = impact.summary_path
+    # --------------------------------------------------------------------------
 
-
-    # 4. Generate Figures
+    # 3. Generate Figures
     artifacts = generate_analysis_figures(
         panel=panel,
         policy_date=policy_date,
@@ -266,7 +235,7 @@ if __name__ == "__main__":
         covariates=psm_diag.get("covariates", []), # Use the actual covariates used in PSM
         matched_treated=matched_t,
         matched_control=matched_c,
-        impact_series=impact_series,
+        impact_series=impact_timeline, # Use the timeline from the Python CI analysis
         root=ROOT,
     )
     
@@ -274,7 +243,6 @@ if __name__ == "__main__":
     print("[RUN] unified-writer about to merge & write results/results.json")
 
     # === Unified results writer (drop-in) =======================================
-    # The necessary modules (json, Path, pandas) are already imported globally.
 
     # Build 'out' from your existing variables
     out = {
@@ -283,21 +251,29 @@ if __name__ == "__main__":
             "att": psm_att,
             "covariates": psm_diag.get("covariates", []) if isinstance(psm_diag, dict) else [],
             "diagnostics": psm_diag if isinstance(psm_diag, dict) else {},
-            "notes": psm_reason if 'psm_reason' in locals() else None,
+            "notes": psm_reason,
         },
-        "sarimax": {
-            "att": impact_att,
-            "ci": ([float(impact_ci[0]), float(impact_ci[1])]
-                   if impact_ci and all(v is not None for v in impact_ci) else [None, None]),
-            "timeline": impact_series if isinstance(impact_series, list) else [],
-            "notes": "treated-minus-control",
+        # The dedicated SARIMAX section is deprecated, its functionality is now within "bsts"
+        "sarimax": {  
+            "att": None,
+            "ci": [None, None],
+            "timeline": [],
+            "notes": "deprecated (Python CI implementation supersedes)"
+        },
+        # Populate BSTS section with results from the new Python CI tool
+        "bsts": {
+            "att": bsts_att,
+            "ci": bsts_ci,
+            "p": bsts_p,
+            "relative_effect": bsts_rel,
+            "notes": bsts_notes,
         },
         "artifacts": {
             "event_study": getattr(artifacts, "event_study", "figures/fig1_event_study.png"),
             "balance":     getattr(artifacts, "balance",     "figures/fig2_smd_balance.png"),
-            "impact":      getattr(artifacts, "impact",      "figures/fig3_impact_counterfactual.png"),
-            "bsts_plot": "figures/fig_causalimpact.png",
-            "bsts_txt":  "results/causalimpact_summary.txt",
+            "impact":      impact_plot or "figures/fig_causalimpact.png", # Use the CI plot as the main impact visualization
+            "bsts_plot":   impact_plot or "figures/fig_causalimpact.png",
+            "bsts_txt":    impact_txt or "results/causalimpact_summary.txt",
         }
     }
 
@@ -309,26 +285,14 @@ if __name__ == "__main__":
         "intervention_date": policy_date.date().isoformat(),
     }
 
-    # Merge BSTS JSON if present (written by R script)
-    bsts_path = results_dir / "bsts.json"
-    if bsts_path.exists():
-        try:
-            bsts = json.loads(bsts_path.read_text())
-            out["bsts"] = {
-                "att": bsts.get("att"),
-                "ci": bsts.get("ci") or [None, None],
-                "p": bsts.get("p"),
-                "relative_effect": bsts.get("relative_effect"),
-                "notes": bsts.get("notes"),
-            }
-        except Exception as e:
-            out["bsts"] = {"att": None, "ci": [None, None], "p": None,
-                           "relative_effect": None, "notes": f"Failed to read bsts.json: {e}"}
-    else:
-        out["bsts"] = {"att": None, "ci": [None, None], "p": None,
-                       "relative_effect": None, "notes": "BSTS not run or bsts.json missing"}
+    # Remove the bsts.json reading block as Python now generates the result directly
+    # And there is no more need to worry about float('nan') which isn't json serializable
+    def json_default_handler(obj):
+        if pd.isna(obj) or obj is None:
+            return None
+        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
     # Write unified file
-    (results_dir / "results.json").write_text(json.dumps(out, indent=2))
+    (results_dir / "results.json").write_text(json.dumps(out, indent=2, default=json_default_handler))
     print("Wrote unified results to results/results.json")
     # ========================================================================
