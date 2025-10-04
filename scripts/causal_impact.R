@@ -70,23 +70,31 @@ get_rc <- function(tbl, r, c, warn = TRUE, fail_on_missing = FALSE) {
 # --- Parsing Helpers for CausalImpact Summary -------------------------------
 parse_point <- function(x, remove_pct = FALSE) {
     if (is.na(x) || is.null(x)) return(NA_real_)
-    val_str <- as.character(x)
-    # Remove (s.d.) part
+    val_str <- trimws(as.character(x))
+    # Remove (s.d.) part: split on optional spaces before (
     if (grepl("\\(", val_str)) {
-        val_str <- strsplit(val_str, " \\(")[[1]][1]
+        val_str <- strsplit(val_str, "\\s*\\(")[[1]][1]
+        val_str <- trimws(val_str)
     }
     # Remove % if requested
     if (remove_pct) val_str <- gsub("%", "", val_str)
-    as.numeric(val_str)
+    val_str <- trimws(val_str)
+    num_val <- suppressWarnings(as.numeric(val_str))
+    if (is.na(num_val)) return(NA_real_)
+    return(num_val)
 }
 
 parse_ci_bounds <- function(x) {
     if (is.na(x) || is.null(x)) return(c(NA_real_, NA_real_))
-    val_str <- gsub("\\[|\\]", "", as.character(x))
+    val_str <- trimws(gsub("\\[|\\]", "", as.character(x)))
+    if (val_str == "") return(c(NA_real_, NA_real_))
     parts <- strsplit(val_str, ",")[[1]]
-    lower_str <- gsub("%", "", trimws(parts[1]))
-    upper_str <- gsub("%", "", trimws(parts[2]))
-    c(as.numeric(lower_str), as.numeric(upper_str))
+    if (length(parts) != 2) return(c(NA_real_, NA_real_))
+    lower_str <- trimws(gsub("%", "", parts[1]))
+    upper_str <- trimws(gsub("%", "", parts[2]))
+    lower <- suppressWarnings(as.numeric(lower_str))
+    upper <- suppressWarnings(as.numeric(upper_str))
+    c(lower, upper)
 }
 # --- End Parsing Helpers --------------------------------------------------
 
@@ -234,7 +242,7 @@ if (ncol(X_pre) > 0 && length(y_pre) > 1) {
 # --- FINAL DATA CLEANUP AND PREP FOR BSTS ---
 df_ci <- df_ci %>%
     # Explicitly coerce selected columns to numeric
-    mutate(across(c(y, starts_with("x_")), as.numeric)) %>%
+    mutate(across(c(y, starts_with("x_")), ~ suppressWarnings(as.numeric(.x)))) %>%
     # Drop any remaining rows that couldn't be filled/coerced
     tidyr::drop_na() 
 
@@ -289,30 +297,28 @@ tryCatch({
     cat("\nSaved:\n  ", summary_txt, "\n  ", plot_path, "\n\n")
 
     # --- Extract Compact JSON Results (using local assignment) -----------------
-    sum_mat <- impact$summary
+    sum_mat <- impact$summary  # Character matrix
     
-    # Find CI rows
-    ci_rows <- which(rownames(sum_mat) == "95% CI")
-    if (length(ci_rows) < 2) stop("Unexpected structure in summary matrix.")
-    pred_ci_row <- ci_rows[1]
-    abs_ci_row <- ci_rows[2]
-    
-    # Extract values using parsers
+    # Extract point estimates
     actual_avg <- parse_point(sum_mat["Actual", "Average"])
     pred_avg <- parse_point(sum_mat["Prediction (s.d.)", "Average"])
     att <- parse_point(sum_mat["Absolute effect (s.d.)", "Average"])
-    rel_val <- parse_point(sum_mat["Relative effect (s.d.)", "Average"], remove_pct = TRUE) / 100
+    rel_pct <- parse_point(sum_mat["Relative effect (s.d.)", "Average"], remove_pct = TRUE)
+    rel <- if (!is.na(rel_pct)) rel_pct / 100 else NA_real_
     
-    # CIs for absolute effect
+    # Extract absolute effect CI (robust to structure)
+    abs_row <- which(rownames(sum_mat) == "Absolute effect (s.d.)")
+    if (length(abs_row) == 0) stop("Missing 'Absolute effect (s.d.)' row in summary")
+    abs_ci_row <- abs_row + 1
+    if (length(abs_ci_row) > nrow(sum_mat) || rownames(sum_mat)[abs_ci_row] != "95% CI") {
+        stop("Unexpected structure after 'Absolute effect (s.d.)' row")
+    }
     abs_ci <- parse_ci_bounds(sum_mat[abs_ci_row, "Average"])
     lo <- abs_ci[1]
     hi <- abs_ci[2]
     
-    # P-value
+    # P-value from inference
     p <- impact$inference$TailProb
-    
-    # Local assignments (<-) to variables initialized outside the tryCatch
-    # (already done above)
     
 }, error = function(e) {
     # On error, use global assignment (<<-) only for the reason variable, 
@@ -333,10 +339,10 @@ dir.create("results", showWarnings = FALSE, recursive = TRUE)
 # will be NA_real_ if the tryCatch block failed) and the captured 'bsts_reason'.
 jsonlite::write_json(
   list(
-    att = as.numeric(att),
-    ci  = c(as.numeric(lo), as.numeric(hi)),
-    p   = if (length(p) == 1 && is.finite(p)) as.numeric(p) else NA_real_,
-    relative_effect = if (!is.na(rel)) as.numeric(rel) else NA_real_,
+    att = if (is.na(att)) NA_real_ else att,
+    ci  = c(if (is.na(lo)) NA_real_ else lo, if (is.na(hi)) NA_real_ else hi),
+    p   = if (length(p) == 1 && is.finite(p)) p else NA_real_,
+    relative_effect = if (is.na(rel)) NA_real_ else rel,
     notes = NULL,
     bsts_reason = bsts_reason # Include the error reason here
   ),
