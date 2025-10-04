@@ -198,6 +198,13 @@ message("--- End Placebo Tests ---\n")
 y <- df_ci$y
 X <- as.matrix(df_ci %>% dplyr::select(-week, -y))
 
+# GUARD: Ensure X is a matrix even if no columns were selected.
+if (is.null(dim(X)) || ncol(X) == 0) {
+  message("No controls after selection; proceeding with univariate BSTS.")
+  # keep X as a zero-column matrix so cbind(y, X) still works:
+  X <- matrix(numeric(0), nrow = length(y), ncol = 0)
+}
+
 ss <- list()
 # Tighter level prior helps shrink wandering trends
 ss <- bsts::AddLocalLevel(ss, y, sigma.prior = bsts::SdPrior(0.05, sample.size = 32))
@@ -211,9 +218,15 @@ fit <- bsts::bsts(y ~ X,
                   niter = niter,
                   expected.model.size = min(15, ncol(X) + 1))
 
-# Impact calculation uses the fitted bsts model
-impact <- CausalImpact(list(y, X), pre.period = pre_period, post.period = post_period,
-                       model.args = list(bsts.model = fit))
+# Use zoo with the Date index so CausalImpact knows the actual timeline
+z_custom <- zoo::zoo(cbind(y, X), order.by = df_ci$week)
+
+impact <- CausalImpact(
+  z_custom,
+  pre.period  = pre_period,
+  post.period = post_period,
+  model.args  = list(bsts.model = fit)
+)
 
 s <- capture.output({
   cat("=== CausalImpact summary ===\n")
