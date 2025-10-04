@@ -1,26 +1,25 @@
+# Python artifacts
 __pycache__/
 *.pyc
-.Rhistory
-.Rproj.user
+*.pyo
+*.log
 
-data/*
-!data/ontario_cases.csv
-
-results/*
-!results/**/*.csv
-!results/**/*.json
-!results/**/*.png
-!results/**/*.pdf
-!results/.keep
-
-figures/*
-!figures/**/*.png
-!figures/**/*.jpg
-!figures/**/*.svg
-!figures/**/*.pdf
-
+# Virtual environment
 .venv/
-.env
+env/
+
+# Build & packaging
+*.egg-info/
+dist/
+build/
+
+# OS / IDE junk
 .DS_Store
 Thumbs.db
-/NUL
+.vscode/
+.idea/
+
+# Generated analysis artifacts
+results/
+figures/
+reports/
