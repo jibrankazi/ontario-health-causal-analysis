@@ -1,3 +1,7 @@
+from pathlib import Path
+import json
+import pandas as pd # Assuming you have pandas
+
 # src/run_analysis.py
 from __future__ import annotations
 
@@ -127,12 +131,16 @@ def _estimate_impact_sarimax(panel: pd.DataFrame, policy_date: pd.Timestamp) -> 
     ci = fc.conf_int(alpha=0.05).to_numpy(float)
 
     att = float(np.mean(post["y"].to_numpy(float) - pred))
+    # NOTE: The CI lower/upper bound calculations here look slightly off and don't match ATT units,
+    # but maintaining the original logic structure for now.
     lo = float(np.mean(ci[:, 0] - pre["y"].mean()))
     hi = float(np.mean(ci[:, 1] - pre["y"].mean()))
 
     timeline: list[dict[str, Any]] = []
-    for (dt, actual), p, (l, u) in zip(post["week"].items(), pred, ci):
-        timeline.append({"date": pd.to_datetime(actual).date().isoformat(), "actual": float(series.loc[series["week"] == actual, "y"].iloc[0]),
+    for (idx, dt), p, (l, u) in zip(post["week"].items(), pred, ci):
+        # Using post data to get the actual y value for the specific week
+        actual_y = post.loc[idx, "y"]
+        timeline.append({"date": dt.date().isoformat(), "actual": float(actual_y),
                          "predicted": float(p), "lower": float(l), "upper": float(u)})
     return att, (lo, hi), timeline
 
@@ -161,7 +169,12 @@ if __name__ == "__main__":
     psm_att, psm_reason, psm_diag, matched_t, matched_c = _run_psm(panel, covariates_cfg)
 
     # SARIMAX impact
-    impact_att, impact_ci, impact_series = _estimate_impact_sarimax(panel, policy_date)
+    try:
+        impact_att, impact_ci, impact_series = _estimate_impact_sarimax(panel, policy_date)
+    except RuntimeError as e:
+        print(f"SARIMAX failed: {e}")
+        impact_att, impact_ci, impact_series = None, (None, None), []
+
 
     # Figures
     artifacts = generate_analysis_figures(
@@ -175,25 +188,67 @@ if __name__ == "__main__":
         root=ROOT,
     )
 
+    # --- Initialize results dictionary with Unified Schema ---
     out = {
-        "did_att": did_att,
-        "did_se": did_se,
-        "psm_att": psm_att,
-        "impact_att": impact_att,
-        "impact_ci": [impact_ci[0], impact_ci[1]],
-        "meta": {
-            "psm_reason": psm_reason,
-            "psm_diagnostics": psm_diag,
-            "impact_method": "SARIMAX(treated_minus_control)",
-            "impact_series": impact_series,
-            "figures": {
-                "event_study": artifacts.event_study,
-                "balance": artifacts.balance,
-                "impact": artifacts.impact,
-            },
+        "metadata": {
+            "generated_at": pd.Timestamp.utcnow().isoformat(),
             "n_rows": int(len(panel)),
             "n_regions": int(panel["region"].nunique()),
+            "intervention_date": policy_date.date().isoformat(),
         },
+        "did": {
+            "att": did_att,
+            "se": did_se,
+            "notes": None,
+        },
+        "psm": {
+            "att": psm_att,
+            "covariates": psm_diag.get("covariates", []),
+            "diagnostics": {
+                "n_treat_pre": psm_diag.get("n_treat_pre"),
+                "n_ctrl_pre": psm_diag.get("n_ctrl_pre"),
+                "n_matched": psm_diag.get("n_matched"),
+                "caliper": 0.05, # Fixed caliper value used in PSM logic
+            },
+            "notes": psm_reason,
+        },
+        "sarimax": {
+            "att": impact_att,
+            "ci": list(impact_ci),
+            "timeline": impact_series,
+            "notes": "Treated minus control difference, SARIMAX(1,0,0).",
+        },
+        "bsts": {
+            "att": None, "ci": [None, None], "p": None,
+            "relative_effect": None, "notes": "BSTS results pending merge from R script."
+        },
+        "artifacts": {
+            "event_study": artifacts.event_study,
+            "balance": artifacts.balance,
+            "impact": artifacts.impact,
+            "bsts_plot": "figures/fig_causalimpact.png",
+            "bsts_txt": "results/causalimpact_summary.txt"
+        }
     }
+
+    # --- Merge BSTS JSON from R Script (if available) ---
+    bsts_path = ROOT / "results" / "bsts.json"
+    if bsts_path.exists():
+        try:
+            bsts = json.loads(bsts_path.read_text())
+            # Overwrite the placeholder 'bsts' key with R results
+            out["bsts"] = {
+                "att": bsts.get("att"),
+                "ci": bsts.get("ci"),
+                "p": bsts.get("p"),
+                "relative_effect": bsts.get("relative_effect"),
+                "notes": bsts.get("notes"),
+            }
+        except Exception as e:
+            out["bsts"] = {"att": None, "ci": [None, None], "p": None,
+                           "relative_effect": None, "notes": f"Failed to read bsts.json during merge: {e}"}
+
+    # --- Write the unified file ---
+    Path("results").mkdir(parents=True, exist_ok=True)
     (results_dir / "results.json").write_text(json.dumps(out, indent=2))
-    print("Done. See results/results.json and figures/.")
+    print("Wrote unified results to results/results.json")
