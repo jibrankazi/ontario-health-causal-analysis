@@ -70,6 +70,7 @@ get_rc <- function(tbl, r, c, warn = TRUE, fail_on_missing = FALSE) {
 # --- Parsing Helpers for CausalImpact Summary -------------------------------
 parse_point <- function(x, remove_pct = FALSE) {
     if (is.na(x) || is.null(x)) return(NA_real_)
+    if (is.numeric(x)) return(x)
     val_str <- trimws(as.character(x))
     # Remove (s.d.) part: split on optional spaces before (
     if (grepl("\\(", val_str)) {
@@ -86,6 +87,7 @@ parse_point <- function(x, remove_pct = FALSE) {
 
 parse_ci_bounds <- function(x) {
     if (is.na(x) || is.null(x)) return(c(NA_real_, NA_real_))
+    if (is.numeric(x)) return(c(x - 1.96 * sd(x), x + 1.96 * sd(x)))  # Fallback if vector
     val_str <- trimws(gsub("\\[|\\]", "", as.character(x)))
     if (val_str == "") return(c(NA_real_, NA_real_))
     parts <- strsplit(val_str, ",")[[1]]
@@ -299,26 +301,53 @@ tryCatch({
     # --- Extract Compact JSON Results (using local assignment) -----------------
     sum_mat <- impact$summary  # Character matrix
     
-    # Extract point estimates
-    actual_avg <- parse_point(sum_mat["Actual", "Average"])
-    pred_avg <- parse_point(sum_mat["Prediction (s.d.)", "Average"])
-    att <- parse_point(sum_mat["Absolute effect (s.d.)", "Average"])
-    rel_pct <- parse_point(sum_mat["Relative effect (s.d.)", "Average"], remove_pct = TRUE)
-    rel <- if (!is.na(rel_pct)) rel_pct / 100 else NA_real_
+    # Trim row and column names for robustness against extra whitespace
+    rownames(sum_mat) <- trimws(rownames(sum_mat))
+    colnames(sum_mat) <- trimws(colnames(sum_mat))
     
-    # Extract absolute effect CI (robust to structure)
-    abs_row <- which(rownames(sum_mat) == "Absolute effect (s.d.)")
-    if (length(abs_row) == 0) stop("Missing 'Absolute effect (s.d.)' row in summary")
-    abs_ci_row <- abs_row + 1
-    if (length(abs_ci_row) > nrow(sum_mat) || rownames(sum_mat)[abs_ci_row] != "95% CI") {
-        stop("Unexpected structure after 'Absolute effect (s.d.)' row")
+    # Robust row selection using grepl
+    abs_row <- which(grepl("Absolute effect", rownames(sum_mat)))
+    if (length(abs_row) == 0) {
+        stop("Missing 'Absolute effect' row in summary")
     }
-    abs_ci <- parse_ci_bounds(sum_mat[abs_ci_row, "Average"])
-    lo <- abs_ci[1]
-    hi <- abs_ci[2]
+    abs_row <- abs_row[1]  # Take first match
     
-    # P-value from inference
+    # Extract point estimates
+    actual_row <- which(grepl("Actual", rownames(sum_mat)))
+    pred_row <- which(grepl("Prediction", rownames(sum_mat)))
+    rel_row <- which(grepl("Relative effect", rownames(sum_mat)))
+    
+    actual_avg <- if (length(actual_row) > 0) parse_point(sum_mat[actual_row[1], "Average"]) else NA_real_
+    pred_avg <- if (length(pred_row) > 0) parse_point(sum_mat[pred_row[1], "Average"]) else NA_real_
+    att <- parse_point(sum_mat[abs_row, "Average"])
+    if (length(rel_row) > 0) {
+        rel_pct <- parse_point(sum_mat[rel_row[1], "Average"], remove_pct = TRUE)
+        rel <- if (!is.na(rel_pct)) rel_pct / 100 else NA_real_
+    } else {
+        rel <- NA_real_
+    }
+    
+    # Extract absolute effect CI (next row after abs_row should be 95% CI)
+    abs_ci_row <- abs_row + 1
+    if (abs_ci_row <= nrow(sum_mat) && grepl("95% CI", rownames(sum_mat)[abs_ci_row])) {
+        abs_ci <- parse_ci_bounds(sum_mat[abs_ci_row, "Average"])
+        lo <- abs_ci[1]
+        hi <- abs_ci[2]
+    } else {
+        lo <- NA_real_
+        hi <- NA_real_
+    }
+    
+    # P-value from inference (direct numeric)
     p <- impact$inference$TailProb
+    
+    # Robust fallback for ATT
+    if (is.na(att) && !is.na(actual_avg) && !is.na(pred_avg)) {
+        att <- actual_avg - pred_avg
+    }
+    
+    # Debug print (remove after fixing)
+    cat("Extracted: att=", att, " lo=", lo, " hi=", hi, " rel=", rel, " p=", p, "\n")
     
 }, error = function(e) {
     # On error, use global assignment (<<-) only for the reason variable, 
@@ -333,68 +362,24 @@ tryCatch({
 })
 
 # --- Export compact JSON (runs always, using initialized/calculated values) ---
-# --- Export compact JSON (from series; version-proof) ------------------------
-# Compute ATT and CI from the post-period effect series.
-
-ser <- as.data.frame(impact$series)
-dates <- zoo::index(impact$series)
-
-# Post-period mask (inclusive)
-post_mask <- dates >= post_period[1] & dates <= post_period[2]
-post <- ser[post_mask, , drop = FALSE]
-
-# Helper to pick the first existing column among candidates
-pick <- function(df, candidates) {
-  hits <- candidates[candidates %in% colnames(df)]
-  if (length(hits)) hits[1] else NA_character_
-}
-
-# Try to use the explicit effect columns; if absent, compute (response - pred)
-col_eff   <- pick(post, c("point.effect", "effect"))
-col_eff_lo<- pick(post, c("point.effect.lower", "effect.lower"))
-col_eff_hi<- pick(post, c("point.effect.upper", "effect.upper"))
-col_resp  <- pick(post, c("response", "y", "actual"))
-col_pred  <- pick(post, c("point.pred", "pred"))
-
-if (is.na(col_eff) && !is.na(col_resp) && !is.na(col_pred)) {
-  post$.__eff__ <- as.numeric(post[[col_resp]]) - as.numeric(post[[col_pred]])
-  col_eff <- ".__eff__"
-}
-
-att <- if (!is.na(col_eff))   mean(as.numeric(post[[col_eff]]),    na.rm = TRUE) else NA_real_
-lo  <- if (!is.na(col_eff_lo)) mean(as.numeric(post[[col_eff_lo]]), na.rm = TRUE) else NA_real_
-hi  <- if (!is.na(col_eff_hi)) mean(as.numeric(post[[col_eff_hi]]), na.rm = TRUE) else NA_real_
-
-# Relative effect: ATT / mean(pred) if we have prediction
-rel <- NA_real_
-if (!is.na(col_pred)) {
-  mu_pred <- mean(as.numeric(post[[col_pred]]), na.rm = TRUE)
-  if (is.finite(mu_pred) && mu_pred != 0 && is.finite(att)) rel <- att / mu_pred
-}
-
-# Optional p-value: try TailProb from the summary table if it exists
-p <- NA_real_
-st <- tryCatch(as.data.frame(summary(impact)$summary), error = function(e) NULL)
-if (!is.null(st) && "TailProb" %in% colnames(st) && "Average" %in% rownames(st)) {
-  p <- suppressWarnings(as.numeric(st["Average", "TailProb"]))
-  if (!is.finite(p)) p <- NA_real_
-}
-
-# Write compact JSON (NA -> null, as required)
 dir.create("results", showWarnings = FALSE, recursive = TRUE)
+
+# Ensure the final output uses the calculated 'att', 'lo', 'hi', 'rel', 'p' (which 
+# will be NA_real_ if the tryCatch block failed) and the captured 'bsts_reason'.
 jsonlite::write_json(
   list(
-    att = if (is.finite(att)) att else NA_real_,
-    ci  = c(if (is.finite(lo)) lo else NA_real_,
-            if (is.finite(hi)) hi else NA_real_),
-    p   = if (is.finite(p)) p else NA_real_,
-    relative_effect = if (is.finite(rel)) rel else NA_real_,
-    notes = NULL
+    att = if (is.na(att)) NA_real_ else att,
+    ci  = c(if (is.na(lo)) NA_real_ else lo, if (is.na(hi)) NA_real_ else hi),
+    p   = if (length(p) == 1 && is.finite(p)) p else NA_real_,
+    relative_effect = if (is.na(rel)) NA_real_ else rel,
+    notes = NULL,
+    bsts_reason = bsts_reason # Include the error reason here
   ),
   path = file.path("results", "bsts.json"),
   auto_unbox = TRUE,
   pretty = TRUE,
   null = "null",
-  na   = "null"
+  na = "null"    # <-- ensures R NA/NaN becomes JSON null (required for robustness)
 )
+
 cat("Saved: results/bsts.json\n")
