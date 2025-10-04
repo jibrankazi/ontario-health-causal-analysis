@@ -1,6 +1,6 @@
 # --- CausalImpact pipeline (robust) ------------------------------------------
 # Run from REPO ROOT:
-#    Rscript scripts/causal_impact.R
+#     Rscript scripts/causal_impact.R
 
 # Adding 'bsts' and 'jsonlite' for custom model building and results export
 need <- c("MatchIt","CausalImpact","tidyverse","ggplot2","zoo","broom", "bsts", "jsonlite") 
@@ -77,14 +77,14 @@ match_ratio <- max(1L, min(5L, floor(n_ctrl / max(1L, n_treat))))
 
 m.out <- matchit(
   treated ~ mean_incidence,
-  data   = pre_baseline,
+  data    = pre_baseline,
   method = "nearest",
   ratio  = match_ratio,
-  replace = TRUE                     # allow reuse of good controls
+  replace = TRUE             # allow reuse of good controls
   # , caliper = 0.15 * sd(pre_baseline$mean_incidence, na.rm=TRUE) # uncomment to tighten matching
 )
 
-matched_data   <- match.data(m.out)
+matched_data    <- match.data(m.out)
 treated_regions <- matched_data %>% filter(treated == 1) %>% pull(region)
 control_regions <- matched_data %>% filter(treated == 0) %>% pull(region)
 
@@ -129,8 +129,8 @@ if (min(df_ci$week) >= policy_date || max(df_ci$week) <= policy_date) {
 
 # (b) Winsorize top/bottom 1% (optional alternative to log)
 # winsor <- function(v, p = 0.01) {
-#   qs <- quantile(v, c(p, 1-p), na.rm = TRUE)
-#   pmin(pmax(v, qs[[1]]), qs[[2]])}
+#    qs <- quantile(v, c(p, 1-p), na.rm = TRUE)
+#    pmin(pmax(v, qs[[1]]), qs[[2]])}
 # # df_ci$y <- winsor(df_ci$y)  # apply similarly to controls if needed
 
 # --- diagnostics: sample sizes & pre-period correlation with Y ---------------
@@ -208,7 +208,7 @@ if (is.null(dim(X)) || ncol(X) == 0) {
 ss <- list()
 # Tighter level prior helps shrink wandering trends
 ss <- bsts::AddLocalLevel(ss, y, sigma.prior = bsts::SdPrior(0.05, sample.size = 32))
-ss <- bsts::AddSeasonal(ss, y, nseasons = 52)   # weekly seasonality
+ss <- bsts::AddSeasonal(ss, y, nseasons = 52)    # weekly seasonality
 # Modest AR helps when residual autocorr is visible
 ss <- bsts::AddAutoAr(ss, y, lags = 1:2)
 
