@@ -333,24 +333,68 @@ tryCatch({
 })
 
 # --- Export compact JSON (runs always, using initialized/calculated values) ---
-dir.create("results", showWarnings = FALSE, recursive = TRUE)
+# --- Export compact JSON (from series; version-proof) ------------------------
+# Compute ATT and CI from the post-period effect series.
 
-# Ensure the final output uses the calculated 'att', 'lo', 'hi', 'rel', 'p' (which 
-# will be NA_real_ if the tryCatch block failed) and the captured 'bsts_reason'.
+ser <- as.data.frame(impact$series)
+dates <- zoo::index(impact$series)
+
+# Post-period mask (inclusive)
+post_mask <- dates >= post_period[1] & dates <= post_period[2]
+post <- ser[post_mask, , drop = FALSE]
+
+# Helper to pick the first existing column among candidates
+pick <- function(df, candidates) {
+  hits <- candidates[candidates %in% colnames(df)]
+  if (length(hits)) hits[1] else NA_character_
+}
+
+# Try to use the explicit effect columns; if absent, compute (response - pred)
+col_eff   <- pick(post, c("point.effect", "effect"))
+col_eff_lo<- pick(post, c("point.effect.lower", "effect.lower"))
+col_eff_hi<- pick(post, c("point.effect.upper", "effect.upper"))
+col_resp  <- pick(post, c("response", "y", "actual"))
+col_pred  <- pick(post, c("point.pred", "pred"))
+
+if (is.na(col_eff) && !is.na(col_resp) && !is.na(col_pred)) {
+  post$.__eff__ <- as.numeric(post[[col_resp]]) - as.numeric(post[[col_pred]])
+  col_eff <- ".__eff__"
+}
+
+att <- if (!is.na(col_eff))   mean(as.numeric(post[[col_eff]]),    na.rm = TRUE) else NA_real_
+lo  <- if (!is.na(col_eff_lo)) mean(as.numeric(post[[col_eff_lo]]), na.rm = TRUE) else NA_real_
+hi  <- if (!is.na(col_eff_hi)) mean(as.numeric(post[[col_eff_hi]]), na.rm = TRUE) else NA_real_
+
+# Relative effect: ATT / mean(pred) if we have prediction
+rel <- NA_real_
+if (!is.na(col_pred)) {
+  mu_pred <- mean(as.numeric(post[[col_pred]]), na.rm = TRUE)
+  if (is.finite(mu_pred) && mu_pred != 0 && is.finite(att)) rel <- att / mu_pred
+}
+
+# Optional p-value: try TailProb from the summary table if it exists
+p <- NA_real_
+st <- tryCatch(as.data.frame(summary(impact)$summary), error = function(e) NULL)
+if (!is.null(st) && "TailProb" %in% colnames(st) && "Average" %in% rownames(st)) {
+  p <- suppressWarnings(as.numeric(st["Average", "TailProb"]))
+  if (!is.finite(p)) p <- NA_real_
+}
+
+# Write compact JSON (NA -> null, as required)
+dir.create("results", showWarnings = FALSE, recursive = TRUE)
 jsonlite::write_json(
   list(
-    att = if (is.na(att)) NA_real_ else att,
-    ci  = c(if (is.na(lo)) NA_real_ else lo, if (is.na(hi)) NA_real_ else hi),
-    p   = if (length(p) == 1 && is.finite(p)) p else NA_real_,
-    relative_effect = if (is.na(rel)) NA_real_ else rel,
-    notes = NULL,
-    bsts_reason = bsts_reason # Include the error reason here
+    att = if (is.finite(att)) att else NA_real_,
+    ci  = c(if (is.finite(lo)) lo else NA_real_,
+            if (is.finite(hi)) hi else NA_real_),
+    p   = if (is.finite(p)) p else NA_real_,
+    relative_effect = if (is.finite(rel)) rel else NA_real_,
+    notes = NULL
   ),
   path = file.path("results", "bsts.json"),
   auto_unbox = TRUE,
   pretty = TRUE,
   null = "null",
-  na = "null"    # <-- ensures R NA/NaN becomes JSON null (required for robustness)
+  na   = "null"
 )
-
 cat("Saved: results/bsts.json\n")
