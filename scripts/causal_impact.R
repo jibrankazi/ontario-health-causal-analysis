@@ -68,35 +68,62 @@ if (length(unique(pre_baseline$treated)) < 2L) {
 
 m.out <- matchit(treated ~ mean_incidence,
                  data  = pre_baseline,
-                 method = "nearest")
-matched_regions <- match.data(m.out)$region
+                 method = "nearest",
+                 # Use max controls, but at least 1, for better covariates
+                 ratio = ceiling(nrow(pre_baseline %>% filter(treated == 0)) / 
+                                 nrow(pre_baseline %>% filter(treated == 1))
+                                 ) 
+                 )
 
-panel <- df %>% filter(region %in% matched_regions)
+# Extract treated region(s) and all matched control region(s)
+matched_data <- match.data(m.out)
+treated_regions <- matched_data %>% filter(treated == 1) %>% pull(region)
+control_regions <- matched_data %>% filter(treated == 0) %>% pull(region)
 
-# Aggregate weekly treated/control means
-agg <- panel %>%
+# --- NEW LOGIC: Prepare Multiple Covariates (as requested in B) ---
+
+# 1. Create the aggregated treated series (y)
+treated_agg <- df %>% 
+  filter(region %in% treated_regions) %>%
   group_by(week) %>%
   summarize(
-    treated_mean = mean(incidence[treated == 1], na.rm=TRUE),
-    control_mean = mean(incidence[treated == 0], na.rm=TRUE),
+    y = mean(incidence, na.rm=TRUE),
     .groups = "drop"
-  ) %>%
+  )
+
+# 2. Create the wide-format control series (x1, x2, etc.)
+control_wide <- df %>%
+  filter(region %in% control_regions) %>%
+  select(week, region, incidence) %>%
+  # Pivot to create a separate column (covariate) for each matched control region
+  pivot_wider(names_from = region, values_from = incidence)
+
+# 3. Join the treated and control series
+df_ci <- treated_agg %>%
+  left_join(control_wide, by = "week") %>%
   arrange(week)
 
-# Fill any missing weeks and carry forward
-all_weeks <- tibble(week = seq(min(agg$week), max(agg$week), by = "week"))
-agg <- all_weeks %>%
-  left_join(agg, by = "week") %>%
-  tidyr::fill(treated_mean, control_mean, .direction = "downup")
+# 4. Fill any missing weeks and carry forward
+all_weeks <- tibble(week = seq(min(df_ci$week), max(df_ci$week), by = "week"))
+df_ci <- all_weeks %>%
+  left_join(df_ci, by = "week") %>%
+  # Fill all time series columns (except 'week')
+  tidyr::fill(names(df_ci)[-1], .direction = "downup") 
 
-if (min(agg$week) >= policy_date || max(agg$week) <= policy_date) {
+if (min(df_ci$week) >= policy_date || max(df_ci$week) <= policy_date) {
   stop("Series does not straddle policy_date; fix policy_date or data.")
 }
 
-z <- zoo(cbind(y = agg$treated_mean, x1 = agg$control_mean), order.by = agg$week)
+# Select all data columns (y and all covariates) and convert to matrix
+z_data <- df_ci %>% select(-week) %>% as.matrix()
 
-pre_period  <- c(min(agg$week), policy_date - 7)
-post_period <- c(policy_date,    max(agg$week))
+# Convert to zoo object for CausalImpact
+# z will now contain Y (treated mean) and multiple X covariates (matched control regions)
+z <- zoo(z_data, order.by = df_ci$week)
+
+# Define periods (using the full extent of the data for post-period, as requested in A)
+pre_period  <- c(min(df_ci$week), policy_date - 7)
+post_period <- c(policy_date,    max(df_ci$week))
 
 impact <- CausalImpact(z, pre.period = pre_period, post.period = post_period,
                          model.args = list(nseasons = 52))
