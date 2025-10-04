@@ -1,396 +1,230 @@
-#!/usr/bin/env python3
-"""
-Main causal analysis pipeline with DiD, PSM, and BSTS-style impact estimation.
-Fixed version with proper error handling and no mock functions.
-"""
+# src/run_analysis.py
+
 from __future__ import annotations
 
 import json
 import os
-import sys
+import random
+import subprocess
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
 import statsmodels.formula.api as smf
+import yaml
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import NearestNeighbors
 
-# Set deterministic behavior
+# ---------------------------
+# Determinism
+# ---------------------------
 os.environ["PYTHONHASHSEED"] = "0"
+random.seed(42)
 np.random.seed(42)
 
-# Setup paths
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+# ---------------------------
+# Config / Paths
+# ---------------------------
+ROOT = Path(__file__).resolve().parents[1]  # project root (e.g., where src/ is)
+cfg = yaml.safe_load((ROOT / "config.yaml").read_text())
+
+data_path = ROOT / cfg.get("data_path", "data/ontario_cases.csv")
+results_dir = ROOT / "results"
+results_dir.mkdir(parents=True, exist_ok=True)
+
+# ---------------------------
+# Load Data
+# ---------------------------
+df = pd.read_csv(data_path)
+
+# Expected columns
+required = {"week", "region", "incidence", "treated"}
+missing = required - set(df.columns)
+if missing:
+    raise ValueError(f"Missing required columns: {missing}")
+
+# Parse dates
+if pd.api.types.is_string_dtype(df["week"]):
+    df["week"] = pd.to_datetime(df["week"], errors="coerce")
+
+# Construct 'post' variable if absent
+if "post" not in df.columns:
+    policy_date = pd.Timestamp(cfg.get("policy_date", "2021-02-01"))
+    df["post"] = (df["week"] >= policy_date).astype(int)
+
+# ---------------------------
+# Difference-in-Differences
+# ---------------------------
+df["treat_post"] = df["treated"] * df["post"]
+did_model = smf.ols("incidence ~ C(region) + C(week) + treat_post", data=df).fit(
+    cov_type="cluster", cov_kwds={"groups": df["region"]}
+)
+did_att = float(did_model.params.get("treat_post", float("nan")))
+did_se = float(did_model.bse.get("treat_post", float("nan")))
+
+# ---------------------------
+# Propensity Score Matching (robust)
+# ---------------------------
+psm_att = None
+psm_reason = None
+psm_diag = {}
 
 try:
-    from shared import ROOT as PROJECT_ROOT, load_config, resolve_intervention_date
-    from figures import generate_analysis_figures
-except ImportError as e:
-    print(f"Warning: Could not import shared modules: {e}")
-    PROJECT_ROOT = ROOT
-    
-    def load_config():
-        """Fallback config loader."""
-        import yaml
-        config_path = ROOT / "config.yaml"
-        if config_path.exists():
-            with open(config_path) as f:
-                return yaml.safe_load(f)
-        return {}
-    
-    def resolve_intervention_date(cfg):
-        """Fallback date resolver."""
-        return pd.Timestamp(cfg.get("policy_date", "2021-02-01"))
-    
-    class FigureArtifacts:
-        """Fallback artifacts class."""
-        def __init__(self, **kwargs):
-            self.__dict__.update(kwargs)
-    
-    def generate_analysis_figures(**kwargs):
-        """Fallback figure generator."""
-        print("Note: Figure generation unavailable (missing dependencies)")
-        return FigureArtifacts(
-            event_study="figures/fig1_event_study.png",
-            balance="figures/fig2_smd_balance.png",
-            impact="figures/fig3_impact_counterfactual.png",
-        )
+    pre = df[df["post"] == 0].copy()
 
+    # Covariates: all numeric columns except keys/outcomes
+    drop_cols = {"week", "region", "incidence", "treated", "post", "treat_post"}
+    covars = [c for c in pre.columns if c not in drop_cols and pd.api.types.is_numeric_dtype(pre[c])]
+    if not covars:
+        covars = ["incidence"]  # fallback
 
-# ------------------------------- I/O -----------------------------------------
-def _load_panel(path: Path) -> pd.DataFrame:
-    """Loads and cleans the panel data."""
-    required = {"week", "region", "incidence", "treated"}
-    df = pd.read_csv(path)
-    missing = required - set(df.columns)
-    if missing:
-        raise ValueError(f"Missing required columns: {sorted(missing)}")
-    
-    df = df.copy()
-    df["week"] = pd.to_datetime(df["week"], errors="coerce")
-    df = df.dropna(subset=["week"]).reset_index(drop=True)
-    df["region"] = df["region"].astype(str)
-    df["treated"] = pd.to_numeric(df["treated"], errors="coerce").fillna(0).astype(int)
-    df["incidence"] = pd.to_numeric(df["incidence"], errors="coerce")
-    df = df.dropna(subset=["incidence"]).reset_index(drop=True)
-    return df
+    n_treat = int(pre["treated"].sum())
+    n_ctrl = int((1 - pre["treated"]).sum())
+    psm_diag.update(n_treat_pre=n_treat, n_ctrl_pre=n_ctrl, covars=covars)
 
-
-# ------------------------------ Methods --------------------------------------
-def _run_did(panel: pd.DataFrame) -> tuple[float | None, float | None]:
-    """TWFE: y ~ unit FE + time FE + treat*post, cluster by unit."""
-    try:
-        if 'treat_post' not in panel.columns:
-            panel['treat_post'] = panel['treated'] * panel['post']
-
-        m = smf.ols("incidence ~ C(region) + C(week) + treat_post", data=panel).fit(
-            cov_type="cluster", cov_kwds={"groups": panel["region"]}
-        )
-        return float(m.params.get("treat_post")), float(m.bse.get("treat_post"))
-    except Exception as e:
-        print(f"DiD failed: {e}")
-        return None, None
-
-
-def _infer_covariates(panel: pd.DataFrame) -> Sequence[str]:
-    """Infers numeric columns for use as covariates in PSM."""
-    drop = {"week", "region", "incidence", "treated", "post", "treat_post", "pre_level", "pre_trend"} 
-    covs = [c for c in panel.columns if c not in drop and pd.api.types.is_numeric_dtype(panel[c])]
-    return covs
-
-
-def _run_psm(
-    panel: pd.DataFrame, 
-    covariates: Sequence[str]
-) -> tuple[float | None, str | None, dict[str, Any], pd.DataFrame | None, pd.DataFrame | None]:
-    """Nearest-neighbor on pre-period propensity scores; returns ATT over post period."""
-    diag: dict[str, Any] = {"caliper": 0.05}
-    
-    if not covariates:
-        return None, "No covariates provided; skipping PSM.", diag, None, None
-
-    pre = panel[panel["post"] == 0].copy()
-    if pre.empty:
-        return None, "No pre-period observations available for PSM.", diag, None, None
-
-    # Validate covariates exist in data
-    covariate_cols = [c for c in covariates if c in pre.columns]
-    if not covariate_cols:
-        return None, "Configured covariates not found in data; skipping PSM.", diag, None, None
-        
-    X = pre[covariate_cols].fillna(pre[covariate_cols].median(numeric_only=True)).to_numpy(float)
-    y = pre["treated"].to_numpy(int)
-    n_treat, n_ctrl = int(pre["treated"].sum()), int((1 - pre["treated"]).sum())
-    
-    diag.update(n_treat_pre=n_treat, n_ctrl_pre=n_ctrl, covariates=list(covariate_cols))
     if n_treat == 0 or n_ctrl == 0:
-        return None, "No treated or control units in pre-period; skipping PSM.", diag, None, None
+        psm_reason = "No treated or control units in pre-period; skipping PSM."
+        raise RuntimeError(psm_reason)
 
-    try:
-        lr = LogisticRegression(max_iter=500, random_state=42).fit(X, y)
-    except ValueError as e:
-        return None, f"Logistic Regression failed: {e}", diag, None, None
+    X = pre[covars].fillna(pre[covars].median(numeric_only=True)).to_numpy()
+    y = pre["treated"].to_numpy()
 
-    pre = pre.assign(ps=lr.predict_proba(X)[:, 1])
+    lr = LogisticRegression(max_iter=500, random_state=42)
+    lr.fit(X, y)
+    pre["ps"] = lr.predict_proba(X)[:, 1]
 
-    treats = pre[pre["treated"] == 1].copy()
-    ctrls = pre[pre["treated"] == 0].copy()
-    if treats.empty or ctrls.empty:
-        return None, "No treated or control rows after PS estimation.", diag, None, None
+    # Common support
+    ps_t = pre.loc[pre["treated"] == 1, "ps"]
+    ps_c = pre.loc[pre["treated"] == 0, "ps"]
+    overlap_low = max(ps_t.min(), ps_c.min())
+    overlap_high = min(ps_t.max(), ps_c.max())
+    psm_diag.update(ps_overlap_low=float(overlap_low), ps_overlap_high=float(overlap_high))
 
-    nn = NearestNeighbors(n_neighbors=1).fit(ctrls[["ps"]].to_numpy(float))
-    dist, idx = nn.kneighbors(treats[["ps"]].to_numpy(float))
-    dist, idx = dist.flatten(), idx.flatten()
+    if overlap_low >= overlap_high:
+        psm_reason = "No common support in propensity scores; skipping PSM."
+        raise RuntimeError(psm_reason)
 
-    caliper = diag["caliper"]
-    treats = treats.reset_index(drop=True)
-    ctrls = ctrls.reset_index(drop=True)
-    
-    pairs = [(treats.iloc[i], ctrls.iloc[j]) for i, j in enumerate(idx) if dist[i] <= caliper]
-    diag["n_matched"] = len(pairs)
-    
-    if not pairs:
-        return None, "No matches within caliper; skipping PSM.", diag, None, None
+    # Restrict to support
+    pre_cs = pre[pre["ps"].between(overlap_low, overlap_high, inclusive="both")].copy()
+    n_treat_cs = int(pre_cs["treated"].sum())
+    n_ctrl_cs = int((1 - pre_cs["treated"]).sum())
+    psm_diag.update(n_treat_pre_cs=n_treat_cs, n_ctrl_pre_cs=n_ctrl_cs)
 
-    # ATT over post period mean incidence by matched regions
-    post = panel[panel["post"] == 1].copy()
-    post_means = post.groupby("region", as_index=True)["incidence"].mean()
+    if n_treat_cs == 0 or n_ctrl_cs == 0:
+        psm_reason = "Common-support filter removed all treated or control units; skipping PSM."
+        raise RuntimeError(psm_reason)
+
+    # Caliper based on 0.2 * SD(logit(ps))
+    eps = 1e-6
+    logit_ps = np.log(np.clip(pre_cs["ps"], eps, 1 - eps) / (1 - np.clip(pre_cs["ps"], eps, 1 - eps)))
+    caliper = 0.2 * float(np.nanstd(logit_ps))
+    psm_diag.update(caliper=caliper)
+
+    # 1-NN with replacement on controls
+    controls = pre_cs[pre_cs["treated"] == 0].copy()
+    treats = pre_cs[pre_cs["treated"] == 1].copy()
+    nn = NearestNeighbors(n_neighbors=1, metric="minkowski", p=2) # Euclidean
+    nn.fit(controls[["ps"]].to_numpy())
+    dist, idx = nn.kneighbors(treats[["ps"]].to_numpy())
+
+    # Filter matches by caliper
+    matched_pairs = []
+    for i, j in enumerate(idx.flatten()):
+        if dist.flatten()[i] <= caliper:
+            matched_pairs.append((treats.iloc[i], controls.iloc[j]))
+
+    psm_diag.update(n_matched=len(matched_pairs))
+    if not matched_pairs:
+        psm_reason = "No matches found within the caliper; skipping PSM."
+        raise RuntimeError(psm_reason)
+
+    # Post-period ATT using matched sets
+    post = df[df["post"] == 1].copy()
+    post_mean_incidence = post.groupby("region")["incidence"].mean()
     diffs = []
-    matched_t_list, matched_c_list = [], []
-    
-    for t_row, c_row in pairs:
+    for t_row, c_row in matched_pairs:
         t_reg, c_reg = t_row["region"], c_row["region"]
-        if t_reg in post_means.index and c_reg in post_means.index:
-            diffs.append(float(post_means.loc[t_reg] - post_means.loc[c_reg]))
-            matched_t_list.append(t_row.to_dict())
-            matched_c_list.append(c_row.to_dict())
-            
+        if t_reg in post_mean_incidence and c_reg in post_mean_incidence:
+            diffs.append(post_mean_incidence[t_reg] - post_mean_incidence[c_reg])
+
     if not diffs:
-        return None, "Matched regions missing in post period; skipping PSM.", diag, None, None
-        
-    return float(np.mean(diffs)), None, diag, pd.DataFrame(matched_t_list), pd.DataFrame(matched_c_list)
+        psm_reason = "Matched regions missing from post-period; skipping PSM."
+        raise RuntimeError(psm_reason)
 
+    psm_att = float(np.mean(diffs))
 
-def _estimate_impact_python(panel: pd.DataFrame, policy_date: pd.Timestamp) -> dict[str, Any]:
+except Exception as e:
+    if psm_reason is None: # If an unexpected error occurred
+        psm_reason = f"PSM failed with an unexpected error: {e}"
+    pass # leave psm_att as None; reason is recorded
+
+# ---------------------------
+# BSTS / CausalImpact via Rscript
+# ---------------------------
+def _bsts_via_rscript(agg_df: pd.DataFrame) -> float:
     """
-    Estimate causal impact using synthetic control or simple SARIMAX.
-    Returns dict with att, ci, p, relative_effect, timeline, notes.
+    Run CausalImpact in an Rscript subprocess and return the average absolute effect.
+    Requires Rscript on PATH and the 'CausalImpact' R package.
     """
-    try:
-        from statsmodels.tsa.statespace.sarimax import SARIMAX
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        csv_path = td_path / "series.csv"
+        out_path = td_path / "out.json"
+        agg_df.to_csv(csv_path, index=False)
+        policy_date_str = pd.Timestamp(cfg.get("policy_date", "2021-02-01")).strftime('%Y-%m-%d')
+
+        r_code = f"""
+        suppressPackageStartupMessages(library(CausalImpact))
+        suppressPackageStartupMessages(library(jsonlite))
+
+        dat <- read.csv("{csv_path.as_posix()}")
+        dat$week <- as.Date(dat$week)
         
-        weekly = panel.copy()
-        weekly["week"] = pd.to_datetime(weekly["week"], errors="coerce")
-        weekly = weekly.dropna(subset=["week"])
+        pre_period <- as.Date(c("{agg_df['week'].min().strftime('%Y-%m-%d')}", "{pd.to_datetime(policy_date_str) - pd.DateOffset(days=1)}"))
+        post_period <- as.Date(c("{policy_date_str}", "{agg_df['week'].max().strftime('%Y-%m-%d')}"))
 
-        treated = (
-            weekly[weekly["treated"] == 1]
-            .groupby("week", as_index=False)["incidence"]
-            .mean()
-            .rename(columns={"incidence": "t"})
-        )
-        control = (
-            weekly[weekly["treated"] == 0]
-            .groupby("week", as_index=False)["incidence"]
-            .mean()
-            .rename(columns={"incidence": "c"})
-        )
-
-        series = pd.merge(treated, control, on="week", how="inner").dropna()
-        series = series.sort_values("week").reset_index(drop=True)
+        ci <- CausalImpact(dat$incidence, pre.period = pre_period, post.period = post_period)
         
-        if series.empty:
-            raise RuntimeError("No overlapping treated/control weeks.")
-
-        series["y"] = series["t"] - series["c"]
-
-        pre = series[series["week"] < policy_date].copy()
-        post = series[series["week"] >= policy_date].copy()
+        res <- list(bsts_att = as.numeric(ci$summary$AbsEffect["Average"]))
+        write(jsonlite::toJSON(res, auto_unbox=TRUE), "{out_path.as_posix()}")
+        """
+        r_script_path = td_path / "run_ci.R"
+        r_script_path.write_text(r_code)
         
-        if pre.empty or post.empty:
-            raise RuntimeError("Pre or post period empty.")
-
-        y_pre = pre["y"].to_numpy(dtype=float)
-        if len(y_pre) < 8:
-            raise RuntimeError("Insufficient pre-period observations (need >= 8).")
-
-        # Try multiple SARIMAX specifications
-        best = None
-        for order in [(1, 0, 0), (0, 1, 1), (1, 1, 0), (0, 1, 0), (1, 1, 1)]:
-            try:
-                model = SARIMAX(y_pre, order=order, enforce_stationarity=False, enforce_invertibility=False)
-                result = model.fit(disp=False)
-                aic = float(result.aic)
-                if best is None or aic < best[0]:
-                    best = (aic, order, result)
-            except Exception:
-                continue
-
-        if best is None:
-            raise RuntimeError("SARIMAX failed to converge.")
-
-        _, order, fitted = best
-        horizon = len(post)
-        forecast = fitted.get_forecast(steps=horizon)
-        predicted = np.asarray(forecast.predicted_mean, dtype=float)
-        conf_int = forecast.conf_int(alpha=0.05)
-        conf_arr = np.asarray(conf_int, dtype=float)
-
-        lower = conf_arr[:, 0]
-        upper = conf_arr[:, -1]
-        actual_post = post["y"].to_numpy(dtype=float)
-
-        effect = actual_post - predicted
-        att = float(np.mean(effect))
-
-        eff_lo = actual_post - upper
-        eff_hi = actual_post - lower
-        ci_lo = float(np.mean(eff_lo))
-        ci_hi = float(np.mean(eff_hi))
-
-        timeline = []
-        for i, week in enumerate(post["week"].to_list()):
-            timeline.append({
-                "date": pd.Timestamp(week).date().isoformat(),
-                "actual": float(actual_post[i]),
-                "predicted": float(predicted[i]),
-                "lower": float(lower[i]),
-                "upper": float(upper[i]),
-                "effect": float(effect[i]),
-            })
-
-        return {
-            "att": att,
-            "ci": [ci_lo, ci_hi],
-            "p": None,  # P-value not directly available from SARIMAX
-            "relative_effect": None,
-            "timeline": timeline,
-            "notes": None,
-        }
+        subprocess.run(["Rscript", str(r_script_path)], check=True, capture_output=True, text=True)
         
-    except Exception as e:
-        return {
-            "att": None,
-            "ci": [None, None],
-            "p": None,
-            "relative_effect": None,
-            "timeline": None,
-            "notes": f"Impact estimation failed: {e}",
-        }
+        out = json.loads(out_path.read_text())
+        return float(out["bsts_att"])
 
+bsts_att = None
+bsts_reason = None
+try:
+    # Aggregate to weekly mean incidence for univariate CausalImpact
+    agg = df.sort_values("week").groupby("week", as_index=False)["incidence"].mean()
+    bsts_att = _bsts_via_rscript(agg)
+except Exception as e:
+    bsts_reason = f"BSTS via Rscript failed: {e}"
 
-# --------------------------------- Main --------------------------------------
-if __name__ == "__main__":
-    cfg = load_config()
-    data_path = PROJECT_ROOT / cfg.get("data_path", "data/ontario_cases.csv")
+# ---------------------------
+# Save & Print Results
+# ---------------------------
+output_data = {
+    "did_att": did_att,
+    "did_se": did_se,
+    "psm_att": psm_att,
+    "bsts_att": bsts_att,
+    "meta": {
+        "psm_reason": psm_reason,
+        "psm_diagnostics": psm_diag,
+        "bsts_reason": bsts_reason,
+        "n_rows": int(len(df)),
+        "n_regions": int(df["region"].nunique()),
+    },
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+}
 
-    results_dir = PROJECT_ROOT / "results"
-    results_dir.mkdir(parents=True, exist_ok=True)
-
-    panel = _load_panel(data_path)
-    policy_date = resolve_intervention_date(cfg)
-
-    # Prepare data
-    if "post" not in panel.columns:
-        panel["post"] = (panel["week"] >= policy_date).astype(int)
-    else:
-        panel["post"] = pd.to_numeric(panel["post"], errors="coerce").fillna(0).astype(int)
-        
-    panel["treat_post"] = panel["treated"] * panel["post"]
-
-    # === Feature Engineering for PSM ===
-    pre = panel[panel["post"] == 0].copy()
-    
-    # Pre-period level
-    lvl = (pre.groupby("region", as_index=False)["incidence"]
-               .mean().rename(columns={"incidence":"pre_level"}))
-               
-    # Pre-period trend
-    def _slope(df: pd.DataFrame) -> float:
-        x = (df["week"] - df["week"].min()).dt.days.values.reshape(-1,1)
-        y = df["incidence"].values.astype(float)
-        if len(y) < 3: 
-            return np.nan 
-        try:
-            b = np.linalg.lstsq(np.c_[np.ones_like(x), x], y, rcond=None)[0][1]
-            return float(b)
-        except Exception:
-            return np.nan
-
-    tr = pre.groupby("region").apply(_slope, include_groups=False).reset_index(name="pre_trend")
-    panel = panel.merge(lvl, on="region", how="left").merge(tr, on="region", how="left")
-
-    # 1. Run DiD
-    did_att, did_se = _run_did(panel)
-
-    # 2. Run PSM
-    covariates_cfg = list(cfg.get("covariates", [])) if cfg.get("covariates") else _infer_covariates(panel)
-    psm_att, psm_reason, psm_diag, matched_t, matched_c = _run_psm(panel, covariates_cfg)
-
-    # 3. Python-based Causal Impact
-    impact = _estimate_impact_python(panel, policy_date)
-
-    # 4. Generate Figures
-    artifacts = generate_analysis_figures(
-        panel=panel,
-        policy_date=policy_date,
-        pre_period=panel[panel["post"] == 0],
-        covariates=psm_diag.get("covariates", []),
-        matched_treated=matched_t,
-        matched_control=matched_c,
-        impact_series=impact.get("timeline"),
-        root=PROJECT_ROOT,
-    )
-
-    # === Build unified results ===
-    def safe_float(val):
-        """Convert to float or None."""
-        if val is None or (isinstance(val, float) and np.isnan(val)):
-            return None
-        return float(val)
-
-    out = {
-        "did": {
-            "att": safe_float(did_att), 
-            "se": safe_float(did_se), 
-            "notes": None
-        },
-        "psm": {
-            "att": safe_float(psm_att),
-            "covariates": psm_diag.get("covariates", []),
-            "diagnostics": psm_diag,
-            "notes": psm_reason,
-        },
-        "bsts": {
-            "att": safe_float(impact.get("att")),
-            "ci": [safe_float(v) for v in impact.get("ci", [None, None])],
-            "p": safe_float(impact.get("p")),
-            "relative_effect": safe_float(impact.get("relative_effect")),
-            "notes": impact.get("notes"),
-        },
-        "artifacts": {
-            "event_study": getattr(artifacts, "event_study", None),
-            "balance": getattr(artifacts, "balance", None),
-            "impact": getattr(artifacts, "impact", None),
-        },
-        "metadata": {
-            "generated_at": pd.Timestamp.utcnow().isoformat(),
-            "n_rows": int(len(panel)),
-            "n_regions": int(panel["region"].nunique()),
-            "intervention_date": policy_date.date().isoformat(),
-        }
-    }
-
-    # Write results
-    output_path = results_dir / "results.json"
-    with open(output_path, "w") as f:
-        json.dump(out, f, indent=2)
-    
-    print(f"\n✓ Analysis complete. Results saved to {output_path}")
-    print("\nSummary:")
-    print(f"  DiD ATT:  {out['did']['att']}")
-    print(f"  PSM ATT:  {out['psm']['att']}")
-    print(f"  BSTS ATT: {out['bsts']['att']}")
+(results_dir / "results.json").write_text(json.dumps(output_data, indent=4))
+print("\n--- Analysis Complete ---")
+print(json.dumps(output_data, indent=4))
