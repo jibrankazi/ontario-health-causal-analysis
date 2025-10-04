@@ -269,8 +269,12 @@ att <- get_rc("Actual", "Average") - get_rc("Pred", "Average")
 # lower = Actual - Pred.upper; upper = Actual - Pred.lower
 lo  <- get_rc("Actual", "Average") - get_rc("Pred.upper", "Average")
 hi  <- get_rc("Actual", "Average") - get_rc("Pred.lower", "Average")
-# Relative effect: may not be in the table; leave NA if absent
-rel <- NA_real_
+
+# Relative effect (%) row sometimes exists; convert to proportion if present
+rel <- if ("RelEffect" %in% rownames(sum_tbl) && "Average" %in% colnames(sum_tbl)) {
+  as.numeric(sum_tbl["RelEffect","Average"]) / 100} else {
+  NA_real_}
+
 # p-value: try TailProb, else NA
 p <- if ("TailProb" %in% colnames(sum_tbl) && "Average" %in% rownames(sum_tbl)) {
   as.numeric(sum_tbl["Average", "TailProb"])} else {
@@ -285,7 +289,7 @@ jsonlite::write_json(
     att = as.numeric(att),
     ci  = c(as.numeric(lo), as.numeric(hi)),
     p   = if (length(p) == 1) as.numeric(p) else NA_real_,
-    relative_effect = if (is.na(rel)) NULL else as.numeric(rel),
+    relative_effect = if (is.na(rel)) NA_real_ else as.numeric(rel),
     notes = NULL
   ),
   path = file.path("results", "bsts.json"),
