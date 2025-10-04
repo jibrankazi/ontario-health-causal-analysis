@@ -20,7 +20,7 @@ suppressPackageStartupMessages({
 
 # --- Config ------------------------------------------------------------------
 data_path   <- "data/ontario_cases.csv"
-policy_date <- as.Date("2021-02-01")      # adjust if needed
+policy_date <- as.Date("2021-02-01")     # adjust if needed
 
 # Output
 fig_dir <- "figures"; dir.create(fig_dir,  showWarnings = FALSE, recursive = TRUE)
@@ -80,7 +80,7 @@ m.out <- matchit(
     data    = pre_baseline,
     method = "nearest",
     ratio  = match_ratio,
-    replace = TRUE           # allow reuse of good controls
+    replace = TRUE         # allow reuse of good controls
     # , caliper = 0.15 * sd(pre_baseline$mean_incidence, na.rm=TRUE) # uncomment to tighten matching
 )
 
@@ -196,6 +196,7 @@ for (pd in placebos) {
     post_p <- c(pd, max(df_ci$week))
     try({
         # Use the simple CausalImpact call for speed in placebos
+        # nseasons = 52 is used here for simplicity, but the main model uses custom bsts
         imp <- CausalImpact(z, pre.period = pre_p, post.period = post_p, model.args = list(nseasons = 52))
         pvals <- c(pvals, summary(imp)$summary$TailProb[2])  # "Average" row
     }, silent = TRUE)
@@ -253,24 +254,37 @@ dev.off()
 cat("\nSaved:\n  ", summary_txt, "\n  ", plot_path, "\n\n")
 
 # --- Export compact JSON (for Python merge) ----------------------------------
-sum_tbl <- summary(impact)$summary
+sum_tbl <- as.data.frame(impact$summary)
 
-get_cell <- function(row_name, col_name) {
-  if (row_name %in% rownames(sum_tbl) && col_name %in% colnames(sum_tbl)) {
-    as.numeric(sum_tbl[row_name, col_name])
-  } else {
-    NA_real_
-  }}# Rows are "Average" / "Cumulative"; columns are metric names.
-att <- get_cell("Average", "AbsEffect")
-lo  <- get_cell("Average", "AbsEffect.lower")
-hi  <- get_cell("Average", "AbsEffect.upper")
-rel <- get_cell("Average", "RelEffect")
-if (!is.na(rel)) rel <- rel / 100  # convert % → proportion
-# p-value column is usually "TailProb"; fall back to "p" if present
+get_rc <- function(r, c) {
+  if (r %in% rownames(sum_tbl) && c %in% colnames(sum_tbl)) {
+    v <- sum_tbl[r, c]
+    if (length(v) == 1 && !is.na(v)) return(as.numeric(v))
+  }
+  return(NA_real_)
+}
+
+# ATT (Average) = Actual(Average) - Pred(Average)
+att <- get_rc("Actual", "Average") - get_rc("Pred", "Average")
+
+# 95% CI for ATT using Pred bounds:
+# lower = Actual - Pred.upper
+# upper = Actual - Pred.lower
+lo  <- get_rc("Actual", "Average") - get_rc("Pred.upper", "Average")
+hi  <- get_rc("Actual", "Average") - get_rc("Pred.lower", "Average")
+
+# Relative effect (% in table); convert to proportion if available
+rel <- get_rc("RelEffect", "Average")
+if (!is.na(rel)) rel <- rel / 100
+
+# p-value: not always in the table; try to read if present, else NA
 p <- if ("TailProb" %in% colnames(sum_tbl)) {
-  get_cell("Average", "TailProb")} else if ("p" %in% colnames(sum_tbl)) {
-  get_cell("Average", "p")} else {
-  NA_real_}
+  get_rc("Average", "TailProb")
+} else if ("p" %in% colnames(sum_tbl)) {
+  get_rc("Average", "p")
+} else {
+  NA_real_
+}
 
 dir.create("results", showWarnings = FALSE, recursive = TRUE)
 jsonlite::write_json(
@@ -278,8 +292,3 @@ jsonlite::write_json(
   path = file.path("results", "bsts.json"),
   auto_unbox = TRUE, pretty = TRUE, null = "null")
 cat("Saved: results/bsts.json\n")
-
-try({
-    ci_sum <- broom::tidy(impact$summary)
-    print(head(ci_sum))
-}, silent = TRUE)
