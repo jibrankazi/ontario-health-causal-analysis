@@ -9,44 +9,41 @@ def _is_numeric(x):
     except Exception:
         return False
 
+def _pick_att(r, method: str):
+    """
+    Support both schemas:
+      - flat:   did_att / psm_att / bsts_att
+      - nested: {"did":{"att":...}}, {"psm":{"att":...}}, {"bsts":{"att":...}}
+    """
+    flat = r.get(f"{method}_att")
+    if flat is not None:
+        return flat
+    nested = r.get(method)
+    if isinstance(nested, dict):
+        return nested.get("att")
+    return None
 
 def test_results_json_exists():
-    """
-    Smoke test: ensure results.json exists and has the essential top-level keys.
-    Accepts the current flat schema (did_att, psm_att, bsts_att, meta).
-    """
     f = Path("results/results.json")
     assert f.exists(), f"Error: The results file {f} does not exist."
-
     try:
         r = json.loads(f.read_text())
     except json.JSONDecodeError as e:
         raise AssertionError(f"Error: Could not decode {f} as JSON. Error: {e}")
 
-    # Flat schema keys written by the pipeline
-    essential_keys = ["did_att", "psm_att", "bsts_att", "meta"]
-    missing = [k for k in essential_keys if k not in r]
-    assert not missing, f"Error: Missing keys in results.json: {missing}"
-
+    # Accept either schema
+    has_flat   = all(k in r for k in ["did_att","psm_att","bsts_att"])
+    has_nested = all(k in r for k in ["did","psm","bsts"])
+    assert has_flat or has_nested, \
+        "results.json must have either flat keys (did_att/psm_att/bsts_att) or nested keys (did/psm/bsts)."
 
 def test_at_least_one_numeric_att():
-    """
-    Ensure at least one ATT is numeric (BSTS may legitimately be None).
-    """
     r = json.loads(Path("results/results.json").read_text())
-
-    did  = r.get("did_att")
-    psm  = r.get("psm_att")
-    bsts = r.get("bsts_att")
-
-    any_numeric = any(_is_numeric(v) for v in [did, psm, bsts])
-    assert any_numeric, "At least one ATT must be numeric among did_att, psm_att, bsts_att."
-
+    vals = [_pick_att(r, m) for m in ["did","psm","bsts"]]
+    assert any(_is_numeric(v) for v in vals), \
+        "At least one ATT must be numeric among DiD/PSM/BSTS."
 
 def test_meta_present_and_well_formed():
-    """
-    Basic sanity check on meta block (exists and is a dict).
-    """
     r = json.loads(Path("results/results.json").read_text())
     meta = r.get("meta")
-    assert isinstance(meta, dict), "meta must exist and be a JSON object (dict)."
+    assert isinstance(meta, dict), "meta must exist and be a dict."
