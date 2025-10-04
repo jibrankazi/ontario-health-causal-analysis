@@ -1,10 +1,11 @@
-data_path: "data/ontario_cases.csv"
-date_col: "week"
-unit_col: "region"
-outcome_col: "incidence"
-treat_col: "treated"
+# Preferred key:
 intervention_date: "2021-02-01"
-covariates:
-  - pre_level
-  - pre_trend
-freq: "W-MON"
+
+# Legacy is still honored if present:
+# policy_date: "2021-02-01"
+
+# Your official dataset:
+data_path: "data/ontario_cases.csv"
+
+# Optional: if you plan to drive PSM with explicit covariates
+# covariates: ["pre_level", "pre_trend"]
