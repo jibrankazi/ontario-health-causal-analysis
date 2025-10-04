@@ -1,32 +1,26 @@
 {
-  "did_att": -244.0241348794655,
-  "did_se": 167.03830806878258,
-  "psm_att": -87.11058435173477,
-  "bsts_att": null,
-  "meta": {
-    "psm_reason": null,
-    "psm_diagnostics": {
-      "n_treat_pre": 135,
-      "n_ctrl_pre": 783,
-      "covars": [
-        "incidence"
-      ],
-      "ps_overlap_low": 0.04899376850742453,
-      "ps_overlap_high": 0.17369661478967574,
-      "n_treat_pre_cs": 135,
-      "n_ctrl_pre_cs": 729,
-      "caliper": 0.051902539288624795,
-      "n_matched": 135
+    "did_att": -245.81709365317272,
+    "did_se": 166.37498721677002,
+    "psm_att": -105.19726923395444,
+    "bsts_att": null,
+    "meta": {
+        "psm_reason": null,
+        "psm_diagnostics": {
+            "n_treat_pre": 125,
+            "n_ctrl_pre": 725,
+            "covars": [
+                "incidence"
+            ],
+            "ps_overlap_low": 0.049976618284577924,
+            "ps_overlap_high": 0.1727652977572611,
+            "n_treat_pre_cs": 125,
+            "n_ctrl_pre_cs": 679,
+            "caliper": 0.051934285731218166,
+            "n_matched": 125
+        },
+        "bsts_reason": "BSTS via Rscript failed: Command '['Rscript', 'C:\\\\Users\\\\jibra\\\\AppData\\\\Local\\\\Temp\\\\tmpsxsi63jq\\\\run_ci.R']' returned non-zero exit status 1.",
+        "n_rows": 4760,
+        "n_regions": 34
     },
-    "bsts_reason": "BSTS via Rscript failed: Command '['Rscript', 'C:\\\\Users\\\\jibra\\\\AppData\\\\Local\\\\Temp\\\\tmp_2hkcwi9\\\\run_ci.R']' returned non-zero exit status 1.",
-    "n_rows": 4760,
-    "n_regions": 34
-  },
-  "timestamp": "2025-10-04T21:36:55.961995+00:00",
-  "did": {
-    "att": -244.0241348794655
-  },
-  "psm": {
-    "att": -87.11058435173477
-  }
+    "timestamp": "2025-10-04T22:24:10.799198+00:00"
 }
