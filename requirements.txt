@@ -1,6 +1,7 @@
-numpy==1.26.4
-pandas==2.2.2
-scikit-learn==1.5.2
-statsmodels==0.14.2
-matplotlib==3.8.4
-PyYAML==6.0.2
+# requirements.txt (Windows, Python 3.13–friendly)
+numpy>=2.1
+pandas>=2.2
+statsmodels>=0.14.2
+scikit-learn>=1.4
+pyyaml>=6.0
+matplotlib>=3.8
