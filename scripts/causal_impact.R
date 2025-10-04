@@ -1,6 +1,6 @@
 # --- CausalImpact pipeline (robust) ------------------------------------------
 # Run from REPO ROOT:
-#   Rscript scripts/causal_impact.R
+#    Rscript scripts/causal_impact.R
 
 need <- c("MatchIt","CausalImpact","tidyverse","ggplot2","zoo","broom")
 new  <- setdiff(need, rownames(installed.packages()))
@@ -17,7 +17,7 @@ suppressPackageStartupMessages({
 
 # --- Config ------------------------------------------------------------------
 data_path   <- "data/ontario_cases.csv"
-policy_date <- as.Date("2021-02-01")      # adjust if needed
+policy_date <- as.Date("2021-02-01")     # adjust if needed
 
 # Output
 fig_dir <- "figures"; dir.create(fig_dir,  showWarnings = FALSE, recursive = TRUE)
@@ -27,6 +27,14 @@ summary_txt <- file.path(res_dir, "causalimpact_summary.txt")
 
 stopifnot(file.exists(data_path))
 df <- read.csv(data_path, stringsAsFactors = FALSE)
+
+# Coerce literal "NA" strings to real NA, and ensure numerics are numeric
+df[] <- lapply(df, function(x) if (is.character(x)) dplyr::na_if(x, "NA") else x)
+num_cols <- c("incidence","treated")  # add more numeric cols if you have them
+for (nm in intersect(num_cols, names(df))) {
+  df[[nm]] <- suppressWarnings(as.numeric(df[[nm]]))
+}
+df <- tidyr::drop_na(df) # Remove any rows containing NAs now that they are properly detected
 
 need_cols <- c("week","region","incidence","treated")
 missing   <- setdiff(need_cols, names(df))
@@ -59,7 +67,7 @@ if (length(unique(pre_baseline$treated)) < 2L) {
 }
 
 m.out <- matchit(treated ~ mean_incidence,
-                 data   = pre_baseline,
+                 data  = pre_baseline,
                  method = "nearest")
 matched_regions <- match.data(m.out)$region
 
@@ -91,7 +99,7 @@ pre_period  <- c(min(agg$week), policy_date - 7)
 post_period <- c(policy_date,    max(agg$week))
 
 impact <- CausalImpact(z, pre.period = pre_period, post.period = post_period,
-                       model.args = list(nseasons = 52))
+                         model.args = list(nseasons = 52))
 
 s <- capture.output({
   cat("=== CausalImpact summary ===\n")
