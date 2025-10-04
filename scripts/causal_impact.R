@@ -248,20 +248,27 @@ tryCatch({
     # --- Extract Compact JSON Results ----------------------------------------
     sum_tbl <- as.data.frame(summary(impact)$summary)
     
-    # Helper to safely extract numeric values (Now pure and warns on missing keys)
-    get_rc <- function(tbl, r, c) {
-      if (!(r %in% rownames(tbl))) warning(sprintf("CausalImpact summary table: Row '%s' not found.", r))
-      if (!(c %in% colnames(tbl))) warning(sprintf("CausalImpact summary table: Column '%s' not found.", c))
-      
-      if (r %in% rownames(tbl) && c %in% colnames(tbl)) {
+    # Helper to safely extract a numeric value from a summary table.
+    # Returns NA_real_ if the row or column doesn't exist.
+    get_rc <- function(tbl, r, c, warn = TRUE) {
+        if (!(r %in% rownames(tbl))) {
+            if (warn) warning(sprintf("CausalImpact summary table: Row '%s' not found.", r))
+            return(NA_real_)
+        }
+        if (!(c %in% colnames(tbl))) {
+            if (warn) warning(sprintf("CausalImpact summary table: Column '%s' not found.", c))
+            return(NA_real_)
+        }
         v <- tbl[r, c]
-        # Ensure it is scalar and not NA before coercing
-        if (length(v) == 1 && !is.na(v)) return(as.numeric(v))
-      }
-      return(NA_real_)}
+        # Ensure result is numeric and scalar, handling potential coercion warnings gracefully
+        if (length(v) == 1 && !is.na(v)) {
+            val <- suppressWarnings(as.numeric(v))
+            # Only return if coercion was successful
+            if (!is.na(val)) return(val)
+        }
+        return(NA_real_)}
       
     # Assign to global scope for use in the final write_json block
-    # Usage now includes sum_tbl argument: get_rc(sum_tbl, row, col)
     att_actual <- get_rc(sum_tbl, "Actual", "Average")
     att_pred   <- get_rc(sum_tbl, "Pred", "Average")
     att_pred_upper <- get_rc(sum_tbl, "Pred.upper", "Average")
@@ -275,11 +282,12 @@ tryCatch({
     lo  <<- att_actual - att_pred_upper
     hi  <<- att_actual - att_pred_lower
 
-    # Relative effect (%) row sometimes exists; convert to proportion if present
-    rel_val <- get_rc(sum_tbl, "RelEffect", "Average")
+    # Relative effect (%) row sometimes exists; convert to proportion if present. 
+    # Use warn=FALSE as its absence is sometimes expected.
+    rel_val <- get_rc(sum_tbl, "RelEffect", "Average", warn = FALSE)
     rel <<- if (!is.na(rel_val)) rel_val / 100 else NA_real_
 
-    # p-value: try TailProb, else NA
+    # p-value: try TailProb. This field should exist, so warn=TRUE (default).
     p <<- get_rc(sum_tbl, "Average", "TailProb")
 
     # Safety check: ensure p is NA_real_ if it somehow ended up as Inf/NaN
