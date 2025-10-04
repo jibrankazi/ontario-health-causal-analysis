@@ -28,6 +28,27 @@ res_dir <- "results"; dir.create(res_dir,  showWarnings = FALSE, recursive = TRU
 plot_path   <- file.path(fig_dir, "fig_causalimpact.png")
 summary_txt <- file.path(res_dir, "causalimpact_summary.txt")
 
+
+# --- Helper Function: Safely extract numeric value from a table ---
+# This is now a top-level, pure function, improving testability and clarity.
+# It uses 'drop = TRUE' for safe indexing and allows suppressing warnings.
+get_rc <- function(tbl, r, c, warn = TRUE) {
+    if (!(r %in% rownames(tbl))) {
+        if (warn) warning(sprintf("Row '%s' not found.", r))
+        return(NA_real_)
+    }
+    if (!(c %in% colnames(tbl))) {
+        if (warn) warning(sprintf("Column '%s' not found.", c))
+        return(NA_real_)
+    }
+    # Use drop=TRUE to ensure a scalar is returned for a single cell extraction.
+    val <- suppressWarnings(as.numeric(tbl[r, c, drop = TRUE]))
+    if (!is.na(val)) return(val)
+    return(NA_real_)
+}
+# --- End Helper Function --------------------------------------------------
+
+
 # --- Data Loading and Cleaning -----------------------------------------------
 stopifnot(file.exists(data_path))
 df <- read.csv(data_path, stringsAsFactors = FALSE)
@@ -211,8 +232,7 @@ tryCatch({
     }
     ss <- bsts::AddSeasonal(ss, y, nseasons = 52)    # weekly seasonality
     
-    # FIX: Uses stable default AR specification (removed explicit lags = 1:2)
-    # Modest AR helps when residual autocorr is visible
+    # Uses stable default AR specification 
     ss <- bsts::AddAutoAr(ss, y) 
 
     niter <- 5000  # raise for tighter posteriors if needed
@@ -245,66 +265,48 @@ tryCatch({
     
     cat("\nSaved:\n  ", summary_txt, "\n  ", plot_path, "\n\n")
 
-    # --- Extract Compact JSON Results ----------------------------------------
+    # --- Extract Compact JSON Results (using local assignment) -----------------
     sum_tbl <- as.data.frame(summary(impact)$summary)
     
-    # Helper to safely extract a numeric value from a summary table.
-    # Returns NA_real_ if the row or column doesn't exist.
-    get_rc <- function(tbl, r, c, warn = TRUE) {
-        if (!(r %in% rownames(tbl))) {
-            if (warn) warning(sprintf("CausalImpact summary table: Row '%s' not found.", r))
-            return(NA_real_)
-        }
-        if (!(c %in% colnames(tbl))) {
-            if (warn) warning(sprintf("CausalImpact summary table: Column '%s' not found.", c))
-            return(NA_real_)
-        }
-        v <- tbl[r, c]
-        # Ensure result is numeric and scalar, handling potential coercion warnings gracefully
-        if (length(v) == 1 && !is.na(v)) {
-            val <- suppressWarnings(as.numeric(v))
-            # Only return if coercion was successful
-            if (!is.na(val)) return(val)
-        }
-        return(NA_real_)}
-      
-    # Assign to global scope for use in the final write_json block
-    att_actual <- get_rc(sum_tbl, "Actual", "Average")
-    att_pred   <- get_rc(sum_tbl, "Pred", "Average")
-    att_pred_upper <- get_rc(sum_tbl, "Pred.upper", "Average")
-    att_pred_lower <- get_rc(sum_tbl, "Pred.lower", "Average")
+    # Use a local list for clean assignment, avoiding global assignment (<<-)
+    results <- list(
+        att_actual     = get_rc(sum_tbl, "Actual", "Average"),
+        att_pred       = get_rc(sum_tbl, "Pred", "Average"),
+        att_pred_upper = get_rc(sum_tbl, "Pred.upper", "Average"),
+        att_pred_lower = get_rc(sum_tbl, "Pred.lower", "Average"),
+        # Suppress warning for 'RelEffect' as its absence is sometimes expected
+        rel_val        = get_rc(sum_tbl, "RelEffect", "Average", warn = FALSE), 
+        p_value        = get_rc(sum_tbl, "Average", "TailProb")
+    )
     
-    # ATT (Average) = Actual(Average) - Pred(Average)
-    att <<- att_actual - att_pred
+    # Local assignments (<-) to variables initialized outside the tryCatch
+    att <- results$att_actual - results$att_pred
+    lo  <- results$att_actual - results$att_pred_upper
+    hi  <- results$att_actual - results$att_pred_lower
     
-    # 95% CI for ATT using Pred bounds:
-    # lower = Actual - Pred.upper; upper = Actual - Pred.lower
-    lo  <<- att_actual - att_pred_upper
-    hi  <<- att_actual - att_pred_lower
-
-    # Relative effect (%) row sometimes exists; convert to proportion if present. 
-    # Use warn=FALSE as its absence is sometimes expected.
-    rel_val <- get_rc(sum_tbl, "RelEffect", "Average", warn = FALSE)
-    rel <<- if (!is.na(rel_val)) rel_val / 100 else NA_real_
-
-    # p-value: try TailProb. This field should exist, so warn=TRUE (default).
-    p <<- get_rc(sum_tbl, "Average", "TailProb")
-
-    # Safety check: ensure p is NA_real_ if it somehow ended up as Inf/NaN
-    if (!is.finite(p)) p <<- NA_real_
+    # Relative effect calculation
+    rel <- if (!is.na(results$rel_val)) results$rel_val / 100 else NA_real_
+    
+    # P-value cleanup
+    p <- if (is.finite(results$p_value)) results$p_value else NA_real_
     
 }, error = function(e) {
-    # On error, set the reason globally. Numerical results (att, lo, hi, rel, p) 
-    # will retain their initial NA_real_ value, which translates to JSON null.
+    # On error, use global assignment (<<-) only for the reason variable, 
+    # ensuring it's captured in the parent scope.
     bsts_reason <<- paste0("BSTS via Rscript failed: ", e$message)
     message(bsts_reason)
-    # Clean up any partial outputs that might have been created before the error
-    if (file.exists(summary_txt)) file.remove(summary_txt)
-    if (file.exists(plot_path)) file.remove(plot_path)
+    
+    # --- Simplify error handling for file cleanup ---
+    # Removes files only if they exist
+    files_to_check <- c(summary_txt, plot_path)
+    file.remove(files_to_check[file.exists(files_to_check)])
 })
 
 # --- Export compact JSON (runs always, using initialized/calculated values) ---
 dir.create("results", showWarnings = FALSE, recursive = TRUE)
+
+# Ensure the final output uses the calculated 'att', 'lo', 'hi', 'rel', 'p' (which 
+# will be NA_real_ if the tryCatch block failed) and the captured 'bsts_reason'.
 jsonlite::write_json(
   list(
     att = as.numeric(att),
