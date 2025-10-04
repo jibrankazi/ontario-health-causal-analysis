@@ -18,4 +18,22 @@ The pipeline is fully automated from raw data → verified results → publicati
 ---
 
 ## 🧩 Directory Structure
-
+ontario-health-causal-analysis/
+├── config.yaml # Global configuration file
+├── data/ # Input datasets
+│ └── ontario_cases.csv
+├── src/ # Core analysis code
+│ ├── run_analysis.py
+│ └── ...
+├── scripts/ # Utility scripts
+│ ├── clean_all.py
+│ ├── regenerate_figures.py
+│ └── build_html_report.py
+├── tests/ # Automated regression & smoke tests
+│ ├── test_smoke.py
+│ └── conftest.py
+├── results/ # Output metrics (results.json)
+├── figures/ # Generated plots (att_summary.png)
+├── reports/ # Final HTML report
+├── pyproject.toml # Packaging metadata
+└── README.md
