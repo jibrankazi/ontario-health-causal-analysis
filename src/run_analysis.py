@@ -67,7 +67,8 @@ def _run_did(panel: pd.DataFrame) -> tuple[float | None, float | None]:
 
 def _infer_covariates(panel: pd.DataFrame) -> Sequence[str]:
     """Infers numeric columns for use as covariates in PSM."""
-    drop = {"week", "region", "incidence", "treated", "post", "treat_post"}
+    # Updated: Exclude the new engineered features 'pre_level' and 'pre_trend'
+    drop = {"week", "region", "incidence", "treated", "post", "treat_post", "pre_level", "pre_trend"} 
     covs = [c for c in panel.columns if c not in drop and pd.api.types.is_numeric_dtype(panel[c])]
     return covs
 
@@ -209,30 +210,35 @@ if __name__ == "__main__":
     panel["treat_post"] = panel["treated"] * panel["post"]
 
     # === Feature Engineering for PSM (pre_level and pre_trend) =================
-    # Calculate pre-intervention covariates for PSM (Propensity Score Matching)
-    pre_data = panel[panel["post"] == 0].copy()
+    # --- pre-period covariates for PSM ---
+    pre = panel[panel["post"] == 0].copy()
     
-    # 1. Calculate pre_level (Mean of incidence in pre-period)
-    pre_level = pre_data.groupby("region")["incidence"].mean().rename("pre_level")
-    panel = panel.merge(pre_level, on="region", how="left")
-    
-    # 2. Calculate pre_trend (Slope of incidence vs. time index in pre-period)
-    def calculate_pre_trend(group: pd.DataFrame) -> float:
-        # Sort by week to ensure time index is sequential
-        group = group.sort_values("week").reset_index(drop=True)
-        if len(group) < 2:
-            return 0.0
-        # Create a simple time index (0, 1, 2, ...)
-        time_idx = np.arange(len(group))
-        # Use polyfit to get the slope of incidence vs. time_idx (trend)
+    # level
+    lvl = (pre.groupby("region", as_index=False)["incidence"]
+             .mean().rename(columns={"incidence":"pre_level"}))
+             
+    # trend (simple OLS slope per region)
+    def _slope(df: pd.DataFrame) -> float:
+        # Create continuous time index in days
+        x = (df["week"] - df["week"].min()).dt.days.values.reshape(-1,1)
+        y = df["incidence"].values.astype(float)
+        
+        # Need at least 3 points for a meaningful OLS trend calculation
+        if len(y) < 3: 
+            return np.nan 
+            
+        # Perform OLS using numpy.linalg.lstsq: [1, x] vs y
+        # We extract the slope (index 1) from the coefficients
         try:
-            slope = np.polyfit(time_idx, group["incidence"], 1)[0]
-            return float(slope)
+            b = np.linalg.lstsq(np.c_[np.ones_like(x), x], y, rcond=None)[0][1]
+            return float(b)
         except Exception:
-            return 0.0 # Return 0 if polyfit fails (e.g., numerical issues or NaNs)
+            return np.nan # Return NaN if calculation fails
 
-    pre_trend = pre_data.groupby("region").apply(calculate_pre_trend).rename("pre_trend")
-    panel = panel.merge(pre_trend, on="region", how="left")
+    tr = pre.groupby("region").apply(_slope).reset_index(name="pre_trend")
+
+    # Merge the new covariates back into the main panel dataframe
+    panel = panel.merge(lvl, on="region", how="left").merge(tr, on="region", how="left")
     # ==========================================================================
 
 
