@@ -85,6 +85,9 @@ matched_data   <- match.data(m.out)
 treated_regions <- matched_data %>% filter(treated == 1) %>% pull(region)
 control_regions <- matched_data %>% filter(treated == 0) %>% pull(region)
 
+message("Matched treated regions: ", paste(unique(treated_regions), collapse=", "))
+message("Matched control regions: ", paste(unique(control_regions), collapse=", "))
+
 # --- Controls: wide matrix with clean names (COVARIATES) --------------------
 # Create the wide-format control series, ensuring clean column names (x_region)
 # name controls as x_<region> to guarantee syntactic column names
@@ -116,20 +119,31 @@ if (min(df_ci$week) >= policy_date || max(df_ci$week) <= policy_date) {
   stop("Series does not straddle policy_date; fix policy_date or data.")
 }
 
+# --- Define periods, sample sizes, and run Impact --------------------------
+pre_period  <- c(min(df_ci$week), policy_date - 7)
+post_period <- c(policy_date,      max(df_ci$week))
 
-# Select all data columns (y and all covariates) and convert to matrix
-z_data <- df_ci %>% select(-week) %>% as.matrix()
+n_pre  <- sum(df_ci$week <  policy_date)
+n_post <- sum(df_ci$week >= policy_date)
+message(sprintf("Pre points: %d | Post points: %d", n_pre, n_post))
+if (n_post < 8) warning("Post period has only ", n_post, " points; power will be limited.")
 
 # Convert to zoo object for CausalImpact
-# z will now contain Y (treated mean) and multiple X covariates (matched control regions)
-z <- zoo(z_data, order.by = df_ci$week)
+# NOTE: If you end up with >20 control columns, consider compressing them with PCA first
+# controls <- df_ci %>% dplyr::select(dplyr::starts_with("x_")) %>% as.matrix()
+# pc <- prcomp(controls, center = TRUE, scale. = TRUE)
+# k <- min(5, ncol(controls)) # keep a few components
+# z_data <- cbind(df_ci$y, pc$x[, 1:k, drop = FALSE])
+# colnames(z_data)[1] <- "y"
+# z <- zoo::zoo(z_data, order.by = df_ci$week)
 
-# Define periods (using the full extent of the data for post-period)
-pre_period  <- c(min(df_ci$week), policy_date - 7)
-post_period <- c(policy_date,    max(df_ci$week))
+# Standard method (y and all x_ covariates)
+z_data <- df_ci %>% dplyr::select(-week) %>% as.matrix()
+z <- zoo::zoo(z_data, order.by = df_ci$week)
 
+# Use nseasons=52 for yearly seasonality in weekly data
 impact <- CausalImpact(z, pre.period = pre_period, post.period = post_period,
-                         model.args = list(nseasons = 52))
+                       model.args = list(nseasons = 52))
 
 s <- capture.output({
   cat("=== CausalImpact summary ===\n")
