@@ -30,21 +30,40 @@ summary_txt <- file.path(res_dir, "causalimpact_summary.txt")
 
 
 # --- Helper Function: Safely extract numeric value from a table ---
-# This is now a top-level, pure function, improving testability and clarity.
-# It uses 'drop = TRUE' for safe indexing and allows suppressing warnings.
-get_rc <- function(tbl, r, c, warn = TRUE) {
-    if (!(r %in% rownames(tbl))) {
-        if (warn) warning(sprintf("Row '%s' not found.", r))
+# This function is now defensive, allowing the caller to decide whether to 
+# warn, fail, or silently return NA_real_ on missing keys or failed coercion.
+get_rc <- function(tbl, r, c, warn = TRUE, fail_on_missing = FALSE) {
+    # 1. Input Type Check
+    if (!is.matrix(tbl) && !is.data.frame(tbl)) {
+        stop("tbl must be a matrix or data.frame.")
+    }
+    
+    # 2. Check for row and column existence
+    missing_row <- !(r %in% rownames(tbl))
+    missing_col <- !(c %in% colnames(tbl))
+    
+    if (missing_row || missing_col) {
+        msg <- paste0(
+            if (missing_row) sprintf("Row '%s' not found. ", r) else "",
+            if (missing_col) sprintf("Column '%s' not found.", c) else ""
+        )
+        if (fail_on_missing) stop(msg)
+        if (warn) warning(msg)
         return(NA_real_)
     }
-    if (!(c %in% colnames(tbl))) {
-        if (warn) warning(sprintf("Column '%s' not found.", c))
-        return(NA_real_)
-    }
+    
+    # 3. Extract and coerce to numeric (safely)
     # Use drop=TRUE to ensure a scalar is returned for a single cell extraction.
-    val <- suppressWarnings(as.numeric(tbl[r, c, drop = TRUE]))
-    if (!is.na(val)) return(val)
-    return(NA_real_)
+    val <- as.numeric(tbl[r, c, drop = TRUE])
+    
+    # 4. Check for failed coercion and warn if requested
+    # as.numeric returns NA if the value cannot be coerced.
+    if (is.na(val) && warn) {
+        warning(sprintf("Value at [%s, %s] could not be coerced to numeric or is NA.", r, c))
+    }
+    
+    # Returns the value (which will be NA_real_ if coercion failed)
+    return(val) 
 }
 # --- End Helper Function --------------------------------------------------
 
@@ -221,19 +240,19 @@ bsts_reason <- NULL
 # --- Model Fitting and Analysis (Wrapped in tryCatch) ------------------------
 tryCatch({
     
-    # --- Custom BSTS Model (Robust Priors/AR) --------------------------------
+    # --- Custom BSTS Model (version-safe state specification) ----------------
     ss <- list()
-    # Local level with a version-safe prior
-    if ("SdPrior" %in% getNamespaceExports("bsts")) {
-      ss <- bsts::AddLocalLevel(ss, y, sigma.prior = bsts::SdPrior(0.05, sample.size = 32))
-    } else {
-      # Older bsts: fall back to default prior
-      ss <- bsts::AddLocalLevel(ss, y)
-    }
-    ss <- bsts::AddSeasonal(ss, y, nseasons = 52)    # weekly seasonality
+    # Local level: using default prior for maximum version compatibility
+    ss <- bsts::AddLocalLevel(ss, y)
     
-    # Uses stable default AR specification 
-    ss <- bsts::AddAutoAr(ss, y) 
+    # Weekly seasonality
+    ss <- bsts::AddSeasonal(ss, y, nseasons = 52) 
+    
+    # Optional AR term - use a single scalar for 'lags' for compatibility
+    if ("AddAutoAr" %in% getNamespaceExports("bsts")) {
+      # Use a single integer (e.g., AR(2)). DO NOT use a vector (like 1:2).
+      ss <- bsts::AddAutoAr(ss, y, lags = 2)
+    }
 
     niter <- 5000  # raise for tighter posteriors if needed
     fit <- bsts::bsts(y ~ X,
