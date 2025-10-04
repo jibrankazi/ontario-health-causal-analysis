@@ -9,23 +9,10 @@ ROOT = Path(__file__).resolve().parents[1]
 RES = ROOT / "results" / "results.json"
 FIG = ROOT / "figures"
 
-def pick_att(r, method):
-    """
-    Supports both schemas:
-      - flat:   did_att / psm_att / bsts_att
-      - nested: {"did":{"att":...}}, {"psm":{"att":...}}, {"bsts":{"att":...}}
-    """
-    flat_key = f"{method.lower()}_att"
-    if flat_key in r:
-        return r.get(flat_key)
-    nested = r.get(method.lower(), {})
-    if isinstance(nested, dict):
-        return nested.get("att")
-    return None
-
 def to_num(x):
     try:
-        return float(x) if x is not None and not (isinstance(x, float) and math.isnan(x)) else None
+        f = float(x)
+        return None if math.isnan(f) else f
     except Exception:
         return None
 
@@ -34,23 +21,24 @@ def main():
         raise SystemExit("results/results.json not found. Run: python src/run_analysis.py")
 
     r = json.loads(RES.read_text())
+    did  = to_num(r.get("did_att"))
+    psm  = to_num(r.get("psm_att"))
+    bsts = to_num(r.get("bsts_att"))
 
-    did  = to_num(pick_att(r, "DiD"))
-    psm  = to_num(pick_att(r, "PSM"))
-    bsts = to_num(pick_att(r, "BSTS"))
-
-    s = pd.Series({"DiD": did, "PSM": psm, "BSTS": bsts}, dtype="float")
-
-    # If all are None, at least render NA bars at zero height
-    plot_vals = [0 if v is None else v for v in s.values]
+    # Build a numeric series. If a value is None, plot 0 and label as NA.
+    labels = ["DiD", "PSM", "BSTS"]
+    values = [0 if v is None else v for v in [did, psm, bsts]]
 
     FIG.mkdir(parents=True, exist_ok=True)
-    ax = pd.Series(plot_vals, index=s.index).plot(kind="bar")
+    s = pd.Series(values, index=labels, dtype="float")
+    ax = s.plot(kind="bar")
     ax.set_title("Estimated Treatment Effects (ATT)")
     ax.set_ylabel("ATT")
-    for i, v in enumerate(s.values):
-        label = "NA" if v is None else f"{v:.2f}"
-        ax.text(i, 0 if v is None else v, label, ha="center", va="bottom")
+
+    shown = [did, psm, bsts]
+    for i, v in enumerate(shown):
+        ax.text(i, 0 if v is None else v, "NA" if v is None else f"{v:.2f}",
+                ha="center", va="bottom")
     plt.tight_layout()
     plt.savefig(FIG / "att_summary.png")
     plt.close()
