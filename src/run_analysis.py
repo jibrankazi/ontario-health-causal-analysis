@@ -236,66 +236,60 @@ if __name__ == "__main__":
         root=ROOT,
     )
 
-    # --- Initialize results dictionary with Unified Schema ---
-    out = {
-        "metadata": {
-            "generated_at": pd.Timestamp.utcnow().isoformat(),
-            "n_rows": int(len(panel)),
-            "n_regions": int(panel["region"].nunique()),
-            "intervention_date": policy_date.date().isoformat(),
-        },
-        "did": {
-            "att": did_att,
-            "se": did_se,
-            "notes": None,
-        },
-        "psm": {
-            "att": psm_att,
-            "covariates": psm_diag.get("covariates", []),
-            "diagnostics": {
-                "n_treat_pre": psm_diag.get("n_treat_pre"),
-                "n_ctrl_pre": psm_diag.get("n_ctrl_pre"),
-                "n_matched": psm_diag.get("n_matched"),
-                "caliper": psm_diag.get("caliper", 0.05), # Use diagnostic caliper
-            },
-            "notes": psm_reason,
-        },
-        "sarimax": {
-            "att": impact_att,
-            "ci": list(impact_ci) if impact_ci else [None, None],
-            "timeline": impact_series,
-            "notes": "Treated minus control difference, SARIMAX(1,0,0).",
-        },
-        "bsts": {
-            "att": None, "ci": [None, None], "p": None,
-            "relative_effect": None, "notes": "BSTS results pending merge from R script."
-        },
-        "artifacts": {
-            "event_study": artifacts.event_study,
-            "balance": artifacts.balance,
-            "impact": artifacts.impact,
-            "bsts_plot": "figures/fig_causalimpact.png",
-            "bsts_txt": "results/causalimpact_summary.txt"
-        }
+# === Unified results writer (drop-in) =======================================
+# Build 'out' from your existing variables
+out = {
+    "did": {"att": did_att, "se": did_se, "notes": None},
+    "psm": {
+        "att": psm_att,
+        # Use psm_diag.get('covariates') which contains the actual covariates used
+        "covariates": psm_diag.get("covariates", []) if isinstance(psm_diag, dict) else [], 
+        "diagnostics": psm_diag if isinstance(psm_diag, dict) else {},
+        "notes": psm_reason if 'psm_reason' in locals() else None,
+    },
+    "sarimax": {
+        "att": impact_att,
+        # Ensure impact_ci is properly formatted as a list of floats, handling (None, None) cases
+        "ci": [float(impact_ci[0]), float(impact_ci[1])] if impact_ci and impact_ci[0] is not None else [None, None], 
+        "timeline": impact_series if isinstance(impact_series, list) else [],
+        "notes": "treated-minus-control",
+    },
+    "artifacts": {
+        "event_study": artifacts.event_study if 'artifacts' in locals() else "figures/fig1_event_study.png",
+        "balance":     artifacts.balance     if 'artifacts' in locals() else "figures/fig2_smd_balance.png",
+        "impact":      artifacts.impact      if 'artifacts' in locals() else "figures/fig3_impact_counterfactual.png",
+        "bsts_plot": "figures/fig_causalimpact.png",
+        "bsts_txt":  "results/causalimpact_summary.txt",
     }
+}
+# Metadata
+out["metadata"] = {
+    "generated_at": pd.Timestamp.utcnow().isoformat(),
+    "n_rows": int(len(panel)),
+    "n_regions": int(panel["region"].nunique()),
+    "intervention_date": policy_date.date().isoformat(),
+}
+# Merge BSTS JSON if present (written by R script)
+bsts_path = Path("results/bsts.json")
+if bsts_path.exists():
+    try:
+        bsts = json.loads(bsts_path.read_text())
+        out["bsts"] = {
+            "att": bsts.get("att"),
+            "ci": bsts.get("ci") or [None, None],
+            "p": bsts.get("p"),
+            "relative_effect": bsts.get("relative_effect"),
+            "notes": bsts.get("notes"),
+        }
+    except Exception as e:
+        out["bsts"] = {"att": None, "ci": [None, None], "p": None,
+                       "relative_effect": None, "notes": f"Failed to read bsts.json: {e}"}
+else:
+    out["bsts"] = {"att": None, "ci": [None, None], "p": None,
+                   "relative_effect": None, "notes": "BSTS not run or bsts.json missing"}
 
-    # --- Merge BSTS JSON from R Script (if available) ---
-    bsts_path = results_dir / "bsts.json"
-    if bsts_path.exists():
-        try:
-            bsts = json.loads(bsts_path.read_text())
-            # Overwrite the placeholder 'bsts' key with R results
-            out["bsts"] = {
-                "att": bsts.get("att"),
-                "ci": bsts.get("ci"),
-                "p": bsts.get("p"),
-                "relative_effect": bsts.get("relative_effect"),
-                "notes": bsts.get("notes"),
-            }
-        except Exception as e:
-            out["bsts"] = {"att": None, "ci": [None, None], "p": None,
-                           "relative_effect": None, "notes": f"Failed to read bsts.json during merge: {e}"}
-
-    # --- Write the unified file ---
-    (results_dir / "results.json").write_text(json.dumps(out, indent=2))
-    print("Wrote unified results to results/results.json")
+# Write unified file
+Path("results").mkdir(parents=True, exist_ok=True)
+Path("results/results.json").write_text(json.dumps(out, indent=2))
+print("Wrote unified results to results/results.json")
+# ============================================================================
