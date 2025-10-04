@@ -208,6 +208,34 @@ if __name__ == "__main__":
         
     panel["treat_post"] = panel["treated"] * panel["post"]
 
+    # === Feature Engineering for PSM (pre_level and pre_trend) =================
+    # Calculate pre-intervention covariates for PSM (Propensity Score Matching)
+    pre_data = panel[panel["post"] == 0].copy()
+    
+    # 1. Calculate pre_level (Mean of incidence in pre-period)
+    pre_level = pre_data.groupby("region")["incidence"].mean().rename("pre_level")
+    panel = panel.merge(pre_level, on="region", how="left")
+    
+    # 2. Calculate pre_trend (Slope of incidence vs. time index in pre-period)
+    def calculate_pre_trend(group: pd.DataFrame) -> float:
+        # Sort by week to ensure time index is sequential
+        group = group.sort_values("week").reset_index(drop=True)
+        if len(group) < 2:
+            return 0.0
+        # Create a simple time index (0, 1, 2, ...)
+        time_idx = np.arange(len(group))
+        # Use polyfit to get the slope of incidence vs. time_idx (trend)
+        try:
+            slope = np.polyfit(time_idx, group["incidence"], 1)[0]
+            return float(slope)
+        except Exception:
+            return 0.0 # Return 0 if polyfit fails (e.g., numerical issues or NaNs)
+
+    pre_trend = pre_data.groupby("region").apply(calculate_pre_trend).rename("pre_trend")
+    panel = panel.merge(pre_trend, on="region", how="left")
+    # ==========================================================================
+
+
     # 1. Run DiD
     did_att, did_se = _run_did(panel)
 
@@ -235,8 +263,11 @@ if __name__ == "__main__":
         impact_series=impact_series,
         root=ROOT,
     )
+    
+    print(f"[RUN] src/run_analysis.py :: __file__={__file__}")
+    print("[RUN] unified-writer about to merge & write results/results.json")
 
-    # === Unified results writer =============================================
+    # === Unified results writer (drop-in) =======================================
     from pathlib import Path
     import json, pandas as pd
 
@@ -251,14 +282,12 @@ if __name__ == "__main__":
         },
         "sarimax": {
             "att": impact_att,
-            # Use the refined CI handling logic from the patch
             "ci": ([float(impact_ci[0]), float(impact_ci[1])]
                    if impact_ci and all(v is not None for v in impact_ci) else [None, None]),
             "timeline": impact_series if isinstance(impact_series, list) else [],
             "notes": "treated-minus-control",
         },
         "artifacts": {
-            # Use getattr for safer access, handling cases where 'artifacts' might be missing keys
             "event_study": getattr(artifacts, "event_study", "figures/fig1_event_study.png"),
             "balance":     getattr(artifacts, "balance",     "figures/fig2_smd_balance.png"),
             "impact":      getattr(artifacts, "impact",      "figures/fig3_impact_counterfactual.png"),
@@ -276,7 +305,7 @@ if __name__ == "__main__":
     }
 
     # Merge BSTS JSON if present (written by R script)
-    bsts_path = Path("results/bsts.json")
+    bsts_path = results_dir / "bsts.json"
     if bsts_path.exists():
         try:
             bsts = json.loads(bsts_path.read_text())
@@ -295,7 +324,6 @@ if __name__ == "__main__":
                        "relative_effect": None, "notes": "BSTS not run or bsts.json missing"}
 
     # Write unified file
-    Path("results").mkdir(parents=True, exist_ok=True)
-    Path("results/results.json").write_text(json.dumps(out, indent=2))
+    (results_dir / "results.json").write_text(json.dumps(out, indent=2))
     print("Wrote unified results to results/results.json")
     # ========================================================================
