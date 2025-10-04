@@ -288,7 +288,14 @@ p <- if ("TailProb" %in% colnames(sum_tbl)) {
 
 dir.create("results", showWarnings = FALSE, recursive = TRUE)
 jsonlite::write_json(
-  list(att = att, ci = c(lo, hi), p = p, relative_effect = rel, notes = NULL),
+  list(att = as.numeric(att),
+       ci  = c(as.numeric(lo), as.numeric(hi)),
+       p   = if (length(p)==1) as.numeric(p) else NA_real_,
+       relative_effect = as.numeric(rel),
+       notes = NULL),
   path = file.path("results", "bsts.json"),
-  auto_unbox = TRUE, pretty = TRUE, null = "null")
+  auto_unbox = TRUE,
+  pretty = TRUE,
+  null = "null",
+  na = "null") # <-- Added 'na = "null"' to correctly handle R's NA as JSON null
 cat("Saved: results/bsts.json\n")
