@@ -2,7 +2,8 @@
 # Run from REPO ROOT:
 #    Rscript scripts/causal_impact.R
 
-need <- c("MatchIt","CausalImpact","tidyverse","ggplot2","zoo","broom")
+# Adding 'bsts' explicitly for custom model building
+need <- c("MatchIt","CausalImpact","tidyverse","ggplot2","zoo","broom", "bsts") 
 new  <- setdiff(need, rownames(installed.packages()))
 if (length(new)) install.packages(new, repos = "https://cloud.r-project.org")
 
@@ -13,6 +14,7 @@ suppressPackageStartupMessages({
   library(ggplot2)
   library(zoo)
   library(broom)
+  library(bsts) # Explicitly load bsts for state specification functions
 })
 
 # --- Config ------------------------------------------------------------------
@@ -119,7 +121,18 @@ if (min(df_ci$week) >= policy_date || max(df_ci$week) <= policy_date) {
   stop("Series does not straddle policy_date; fix policy_date or data.")
 }
 
-# --- Define periods, sample sizes, and run Impact --------------------------
+# --- Robustness Toggles ----------------------------------------------------
+# (a) Log transform (handle zeros by +1)
+# df_ci$y <- log1p(df_ci$y)
+# for (nm in names(df_ci)[grepl("^x_", names(df_ci))]) df_ci[[nm]] <- log1p(df_ci[[nm]])
+
+# (b) Winsorize top/bottom 1% (optional alternative to log)
+# winsor <- function(v, p = 0.01) {
+#   qs <- quantile(v, c(p, 1-p), na.rm = TRUE)
+#   pmin(pmax(v, qs[[1]]), qs[[2]])}
+# # df_ci$y <- winsor(df_ci$y)  # apply similarly to controls if needed
+
+# --- diagnostics: sample sizes & pre-period correlation with Y ---------------
 pre_period  <- c(min(df_ci$week), policy_date - 7)
 post_period <- c(policy_date,      max(df_ci$week))
 
@@ -128,22 +141,78 @@ n_post <- sum(df_ci$week >= policy_date)
 message(sprintf("Pre points: %d | Post points: %d", n_pre, n_post))
 if (n_post < 8) warning("Post period has only ", n_post, " points; power will be limited.")
 
-# Convert to zoo object for CausalImpact
-# NOTE: If you end up with >20 control columns, consider compressing them with PCA first
-# controls <- df_ci %>% dplyr::select(dplyr::starts_with("x_")) %>% as.matrix()
-# pc <- prcomp(controls, center = TRUE, scale. = TRUE)
-# k <- min(5, ncol(controls)) # keep a few components
-# z_data <- cbind(df_ci$y, pc$x[, 1:k, drop = FALSE])
+# correlation of controls with treated series in PRE only
+pre_mask <- df_ci$week < policy_date
+y_pre <- df_ci$y[pre_mask]
+X_pre <- df_ci[pre_mask, grepl("^x_", names(df_ci)), drop = FALSE]
+cors <- sapply(X_pre, function(v) suppressWarnings(cor(y_pre, v, use = "pairwise")))
+cors <- sort(cors, decreasing = TRUE)
+message("Top 10 pre-period correlations with Y:")
+print(head(cors, 10))
+
+# --- auto-select the best controls -----------------------------------------
+keep <- names(cors)[which(abs(cors) >= 0.25)]  # tweak threshold
+if (length(keep) < 2L) {
+  warning("Few informative controls (|r|>=0.25). Keeping the top 2 anyway.")
+  keep <- names(cors)[seq_len(min(2, length(cors)))]
+}
+
+df_ci <- df_ci %>%
+  dplyr::select(week, y, dplyr::all_of(keep))
+
+# --- PCA (Optional) Compression --------------------------------------------
+# If the remaining number of controls is still large (>5), you can compress them:
+# X_final <- as.matrix(df_ci %>% dplyr::select(-week, -y))
+# pc <- prcomp(X_final, center = TRUE, scale. = TRUE)
+# k <- min(5, ncol(X_final))
+# z_data <- cbind(y = df_ci$y, pc$x[, 1:k, drop = FALSE])
 # colnames(z_data)[1] <- "y"
 # z <- zoo::zoo(z_data, order.by = df_ci$week)
+# NOTE: If you use PCA, comment out the next block and uncomment the PCA block above.
 
-# Standard method (y and all x_ covariates)
+# Final data for BSTS model (Standard after selection)
 z_data <- df_ci %>% dplyr::select(-week) %>% as.matrix()
 z <- zoo::zoo(z_data, order.by = df_ci$week)
 
-# Use nseasons=52 for yearly seasonality in weekly data
-impact <- CausalImpact(z, pre.period = pre_period, post.period = post_period,
-                       model.args = list(nseasons = 52))
+
+# --- Placebo Tests (Falsification Check) -----------------------------------
+message("\nRunning Placebo Tests (checking pre-policy dates for false effects)...")
+placebos <- as.Date(seq(policy_date - 140, policy_date - 14, by = "7 days"))
+pvals <- c()
+for (pd in placebos) {
+  # Use whole weeks for pre/post split
+  pre_p  <- c(min(df_ci$week), pd - 7)
+  post_p <- c(pd, max(df_ci$week))
+  try({
+    # Use the simple CausalImpact call for speed in placebos
+    imp <- CausalImpact(z, pre.period = pre_p, post.period = post_p, model.args = list(nseasons = 52))
+    pvals <- c(pvals, summary(imp)$summary$TailProb[2])  # "Average" row
+  }, silent = TRUE)
+}
+print(data.frame(placebo_date = placebos, p = pvals))
+message("--- End Placebo Tests ---\n")
+
+
+# --- Custom BSTS Model (Robust Priors/AR) --------------------------------
+y <- df_ci$y
+X <- as.matrix(df_ci %>% dplyr::select(-week, -y))
+
+ss <- list()
+# Tighter level prior helps shrink wandering trends
+ss <- bsts::AddLocalLevel(ss, y, sigma.prior = bsts::SdPrior(0.05, sample.size = 32))
+ss <- bsts::AddSeasonal(ss, y, nseasons = 52)   # weekly seasonality
+# Modest AR helps when residual autocorr is visible
+ss <- bsts::AddAutoAr(ss, y, lags = 1:2)
+
+niter <- 5000  # raise for tighter posteriors if needed
+fit <- bsts::bsts(y ~ X,
+                  state.specification = ss,
+                  niter = niter,
+                  expected.model.size = min(15, ncol(X) + 1))
+
+# Impact calculation uses the fitted bsts model
+impact <- CausalImpact(list(y, X), pre.period = pre_period, post.period = post_period,
+                       model.args = list(bsts.model = fit))
 
 s <- capture.output({
   cat("=== CausalImpact summary ===\n")
