@@ -18,9 +18,9 @@
             "caliper": 0.051934285731218166,
             "n_matched": 125
         },
-        "bsts_reason": "BSTS via Rscript failed: Command '['Rscript', 'C:\\\\Users\\\\jibra\\\\AppData\\\\Local\\\\Temp\\\\tmpm1godwq8\\\\run_ci.R']' returned non-zero exit status 1.",
+        "bsts_reason": "BSTS via Rscript failed: Command '['Rscript', 'C:\\\\Users\\\\jibra\\\\AppData\\\\Local\\\\Temp\\\\tmpuyuupl2c\\\\run_ci.R']' returned non-zero exit status 1.",
         "n_rows": 4760,
         "n_regions": 34
     },
-    "timestamp": "2025-10-05T02:12:37.990059+00:00"
+    "timestamp": "2025-10-05T03:10:49.301773+00:00"
 }
