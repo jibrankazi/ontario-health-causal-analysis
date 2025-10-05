@@ -1,12 +1,20 @@
 cff-version: 1.2.0
-title: "Causal Impact of Ontario Health Policy on Incidence Rates"
-message: "If you use this software, please cite it as below."
+message: "If you use this project, please cite it as below."
+title: "Ontario Health Causal Analysis"
 type: software
 authors:
-  - family-names: "Kazi"
-    given-names: "Jibran"
-identifiers: []
+  - family-names: Kazi
+    given-names: Jibran
+    email: jibrankazi@gmail.com
 version: "1.0.0"
-date-released: "2025-09-27"
-license: "MIT"
-repository-code: "https://github.com/jibrankazi/causal-impact-ontario-health"
+date-released: "2025-10-05"
+license: MIT
+repository-code: "https://github.com/jibrankazi/ontario-health-causal-analysis"
+url: "https://jibrankazi.github.io/ontario-health-causal-analysis/"
+keywords:
+  - causal inference
+  - difference-in-differences
+  - propensity score matching
+  - Bayesian structural time series
+  - public health
+  - Ontario
