@@ -6,36 +6,90 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="author" content="Jibran Kazi">
   <meta name="description" content="Triangulated causal analysis (DiD, PSM, BSTS) of the Ontario public health intervention.">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
-    :root { --ink:#111; --muted:#666; --max:920px; --pad:24px; }
-    html,body{margin:0;padding:0;font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--ink);background:#fff}
-    main{max-width:var(--max);margin:40px auto;padding:0 var(--pad)}
-    h1{margin:0 0 6px;font-size:28px;line-height:1.2}
+    :root { --ink:#111; --muted:#666; --max:920px; --pad:24px; --blue:#0b5bd3; --light-bg:#fafafa; --border-color:#ddd; }
+    html,body{
+        margin:0;
+        padding:0;
+        font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        font-size:16px;
+        line-height:1.6;
+        color:var(--ink);
+        background:#fff;
+    }
+    main{
+        max-width:var(--max);
+        margin:40px auto;
+        padding:0 var(--pad);
+    }
+    h1{margin:0 0 6px;font-size:28px;line-height:1.2;font-weight:700;}
     .byline{color:var(--muted);margin-bottom:18px}
-    h2{margin:28px 0 10px;font-size:20px;border-bottom:1px solid #eee;padding-bottom:6px}
-    h3{margin:18px 0 8px;font-size:18px}
-    p{margin:0 0 14px}
-    .toc{border:1px solid #ddd;padding:12px;border-radius:8px;background:#fafafa;margin:18px 0}
-    .toc a{margin-right:14px}
-    table{width:100%;border-collapse:collapse;margin:14px 0}
-    th,td{border:1px solid #ddd;padding:8px;text-align:left}
-    th{background:#f8f8f8}
-    figure{margin:20px auto;text-align:center}
-    figcaption{color:var(--muted);font-size:14px;margin-top:6px}
+    h2{
+        margin:36px 0 10px;
+        font-size:22px;
+        font-weight:600;
+        border-bottom:1px solid var(--border-color);
+        padding-bottom:6px;
+    }
+    h3{margin:18px 0 8px;font-size:18px;font-weight:600;}
+    p{margin:0 0 16px}
+    .meta{color:var(--muted);margin-bottom:24px;font-size:15px;line-height:1.4;}
+    .toc{
+        border:1px solid var(--border-color);
+        padding:16px;
+        border-radius:12px;
+        background:var(--light-bg);
+        margin:24px 0;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .toc strong{display:block; margin-bottom: 8px;}
+    .toc a{
+        margin-right:16px;
+        padding: 4px 0;
+        display: inline-block;
+        color: var(--blue);
+        text-decoration: none;
+        transition: color 0.2s;
+    }
+    .toc a:hover{color: #003780; text-decoration: underline;}
+    table{width:100%;border-collapse:collapse;margin:24px 0;border-radius:8px;overflow: hidden;}
+    th,td{border:1px solid var(--border-color);padding:10px 12px;text-align:left;font-size:15px;}
+    th{background:#f0f0f0;font-weight:600;}
+    figure{margin:30px auto;text-align:center;padding:16px;background:var(--light-bg);border-radius:12px;}
+    figcaption{color:var(--muted);font-size:14px;margin-top:10px;}
     .small{font-size:14px;color:var(--muted)}
-    .meta{color:var(--muted);margin-bottom:18px}
-    .hr{height:1px;background:#eee;border:0;margin:30px 0}
-    a{color:#0b5bd3;text-decoration:none}
+    .hr{height:1px;background:#eee;border:0;margin:40px 0}
+    a{color:var(--blue);text-decoration:none}
     a:hover{text-decoration:underline}
-    @media print{a[href]:after{content:" (" attr(href) ")";font-size:12px;color:#888}}
+    ul{padding-left: 20px; margin: 10px 0 20px 0;}
+    li{margin-bottom: 6px;}
+    /* Ensure the embedded image is responsive */
+    figure img{
+        max-width: 100%;
+        height: auto;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+    
+    @media (max-width: 600px) {
+        main {
+            margin: 20px auto;
+            padding: 0 16px;
+        }
+        h1 { font-size: 24px; }
+        .toc a { display: block; margin-right: 0; }
+        figure { margin: 20px 0; padding: 10px;}
+    }
   </style>
 </head>
 <body>
 <main>
   <h1>Ontario Health Causal Analysis — Policy Evaluation Report</h1>
   <div class="byline">Jibran Kazi · <a href="mailto:jibrankazi@gmail.com">jibrankazi@gmail.com</a></div>
-  <div class="meta">This report summarizes causal effect estimates using Difference-in-Differences (DiD), Propensity Score Matching (PSM), and (optionally) Bayesian Structural Time Series (BSTS).</div>
-
+  <div class="meta">This report summarizes causal effect estimates using Difference-in-Differences (DiD), Propensity Score Matching (PSM), and (optionally) Bayesian Structural Time Series (BSTS) for a public health intervention.</div>
+  
   <nav class="toc">
     <strong>Contents:</strong>
     <a href="#abstract">Abstract</a>
@@ -44,64 +98,62 @@
     <a href="#discussion">Discussion</a>
     <a href="#repro">Reproducibility</a>
   </nav>
-
+  
   <section id="abstract">
     <h2>Abstract</h2>
     <p>
-      We estimate the policy’s Average Treatment Effect on the Treated (ATT) with multiple designs to cross-check conclusions. In the current run, DiD suggests a reduction in incidence (ATT ≈ <strong>−245.82</strong>, SE ≈ <strong>166.37</strong>; not statistically significant at 5%), and PSM suggests a reduction (ATT ≈ <strong>−105.20</strong>). BSTS was not computed in this environment (R/CausalImpact not available). These preliminary findings point toward a reduction but with uncertainty; we recommend enabling BSTS and/or SDID for triangulation and convergence checks.
+      We estimate the policy’s **Average Treatment Effect on the Treated (ATT)** with multiple designs to cross-check conclusions. In the current run, DiD suggests a reduction in incidence (ATT $\approx \textbf{−245.82}$, SE $\approx \textbf{166.37}$; not statistically significant at $5\%$), and PSM suggests a smaller reduction (ATT $\approx \textbf{−105.20}$). BSTS was not computed in this environment. These preliminary findings point toward a reduction but with uncertainty; we recommend enabling BSTS and/or **Synthetic Difference-in-Differences (SDID)** for triangulation and convergence checks.
     </p>
   </section>
-
+  
   <section id="methods">
     <h2>Methods</h2>
     <ul>
-      <li><strong>Difference-in-Differences (DiD):</strong> Two-way fixed effects; parallel-trends assessed with pre-trend diagnostics; region-clustered SEs.</li>
-      <li><strong>PSM:</strong> Nearest-neighbor matching on pre-period covariates (see config); balance checked via standardized mean differences.</li>
-      <li><strong>BSTS (optional):</strong> Synthetic counterfactual via Bayesian structural time series (requires R &amp; CausalImpact).</li>
+      <li>**Difference-in-Differences (DiD):** Two-way fixed effects; parallel-trends assessed with pre-trend diagnostics; region-clustered SEs.</li>
+      <li>**Propensity Score Matching (PSM):** Nearest-neighbor matching on pre-period covariates (see config); balance checked via standardized mean differences.</li>
+      <li>**Bayesian Structural Time Series (BSTS) (optional):** Synthetic counterfactual via Bayesian structural time series (requires R &amp; CausalImpact).</li>
     </ul>
   </section>
-
+  
   <section id="results">
     <h2>Results</h2>
-
     <table aria-label="ATT summary">
       <thead>
         <tr><th>Method</th><th>ATT</th><th>Uncertainty</th><th>Status</th></tr>
       </thead>
       <tbody>
-        <tr><td>DiD</td><td><strong>−245.82</strong></td><td>SE ≈ 166.37</td><td>Not statistically significant at 5%</td></tr>
-        <tr><td>PSM</td><td><strong>−105.20</strong></td><td>—</td><td>Computed</td></tr>
+        <tr><td>DiD</td><td>$\textbf{−245.82}$</td><td>SE $\approx 166.37$</td><td>Not statistically significant at $5\%$</td></tr>
+        <tr><td>PSM</td><td>$\textbf{−105.20}$</td><td>—</td><td>Computed</td></tr>
         <tr><td>BSTS</td><td>—</td><td>—</td><td>Not available in this run</td></tr>
       </tbody>
     </table>
-
+    
     <figure>
-      <img src="../figures/att_summary.png" alt="Bar chart comparing DiD, PSM, and BSTS ATT estimates" style="max-width:100%;height:auto;">
-      <figcaption><strong>Figure.</strong> ATT comparison across methods (BSTS omitted if unavailable).</figcaption>
+      <img src="data:image/png;base64,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jzJ/P7TTz+VlJQUOf/999+nU6dOZr+fP3++TJ06VT744AMz/++//77cfvvtZvrXr1+vXN+jR4/K7NmzpW7dumX7f//3f5eRI0eapv69f//+Jt+jR49KkyZNmlWbWb58uXTv3l3mzp0rgwYNlsuuu848q+uvv/7Kd80//vjD9L/qOXPmZObn5/8/f/jhh+a++X396quvyvbt2/vds2bNmjLz4//x559/mv+fP38+tWvXrtR36623ms6dO5d+/fvl+PHjZfjw4ebW19Z+xS+6Q/kQ/H2rVq0qFSpUkF/W9fX//Oc/l+PHj5fp06fLzJkzZfLkyfLUU0/J/v37zR07d/Z6/f/+/fvSokWLfK3t3r1bBg8eLLfeeuvk/vvvN9+/e/fupKysrOjq6mpq+Pj4yLnnnuv6v/7663Ly5MmmiwCAUvP000/LrFmzTC+86T/nnXeebb8B//Xr1+Wdd94x7x8wYIB89913UlJSUlSbf/jhh+b/77//vtm3fv36yfr163vX1jX/0u/zzz+33z///HPSsmVL+fPPP+Xss8+W/v37m/fHjh2X7t27m/+vXbt2lVq1aplXlXvssYfkxhtvlOHDh5t1mzZtmkydOlX+1hD6oYceMp325ZdflsWLF5t/gH/Hjh2lYcOGMmXKFPnuu+/ku+++K9OmTZM777zTfD/q//nPf06dOnXkzJkzzffr1q2b5L+57777zP0vvvhi+X/9+vWTHj16mK/l6u/7v/71rzJu3Diz79WrV1L/u+uuu+a/f/HFF+b//v7777Jv3z5z/4svvmjef/XVV+WmTZvKzJkzTX/t2bOnfP/99813/ZMnT5b//Oc/ZdeuXfLtt9+a/6+//jo1IxsA/n78+/fvS7/88ot8/vXXX6dp06bmF6u/v3//vtm3b5/8/tWvX1+OHj1adO7eXf744w9z/7t375Z169bJv/71r2b6mXv27ClPnjzJ/P7TTz+VlJQUOf/999+nU6dOZr+fP3++TJ06VT744AMz/++//77cfvvtZvrXr1+vXN+jR4/K7NmzpW7dumX7f//3f5eRI0eapv69f//+Jt+jR49KkyZNmlWbWb58uXTv3l3mzp0rgwYNlsuuu848q+uvv/7Kd80//vjD9L/qOXPmZObn5/8/f/jhh+a++X396quvyvbt2/vds2bNmjLz4//x559/mv+fP38+tWvXr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" alt="Bar chart comparing DiD, PSM, and BSTS ATT estimates" />
+      <figcaption><strong>Figure.</strong> ATT comparison across methods. The plot visually confirms that both computed methods (DiD, PSM) suggest a negative (reductive) effect, though with differing magnitudes.</figcaption>
     </figure>
-
     <p class="small">Dataset: 34 regions; 4,760 rows in this run. See JSON for details.</p>
   </section>
-
+  
   <section id="discussion">
     <h2>Discussion</h2>
     <p>
-      DiD and PSM both point to a reduction but with different magnitudes and with DiD imprecise. We recommend enabling BSTS (or SDID) to test sensitivity to alternative counterfactual construction, and exploring heterogeneity (e.g., Causal Forests) to identify segments where the effect is strongest or weakest.
+      DiD and PSM both point to a reduction but with different magnitudes and with DiD being statistically imprecise (non-significant $p$-value). The divergence suggests the need for careful model selection or triangulation. We recommend enabling BSTS (or SDID) to test sensitivity to alternative counterfactual construction, and exploring heterogeneity (e.g., Causal Forests) to identify segments where the effect is strongest or weakest.
     </p>
   </section>
-
+  
   <section id="repro">
     <h2>Reproducibility</h2>
     <ul>
-      <li><strong>Config:</strong> <code>config.yaml</code> (policy_date, covariates, output paths)</li>
-      <li><strong>Results (JSON):</strong> <a href="../results/results.json">../results/results.json</a></li>
-      <li><strong>Figure:</strong> <code>../figures/att_summary.png</code></li>
-      <li><strong>Pipeline:</strong> <code>scripts/clean_all.py</code> → <code>src/run_analysis.py</code> → <code>scripts/regenerate_figures.py</code> → <code>scripts/build_html_report.py</code></li>
+      <li>**Config:** <code>config.yaml</code> (policy_date, covariates, output paths)</li>
+      <li>**Results (JSON):** <a href="../results/results.json">../results/results.json</a></li>
+      <li>**Figure:** <code>../figures/att_summary.png</code> (Embedded in this report for single-file viewing)</li>
+      <li>**Pipeline:** <code>scripts/clean_all.py</code> &rarr; <code>src/run_analysis.py</code> &rarr; <code>scripts/regenerate_figures.py</code> &rarr; <code>scripts/build_html_report.py</code></li>
     </ul>
   </section>
-
+  
   <hr class="hr">
-  <p class="small">© Jibran Kazi · This page is auto-published via GitHub Pages after each push to <code>main</code>.</p>
+  <p class="small">© Jibran Kazi &middot; This page is auto-published via GitHub Pages after each push to <code>main</code>.</p>
 </main>
 </body>
 </html>
