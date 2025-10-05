@@ -42,7 +42,8 @@ figures:
   dpi: 300
   format: "png"
   style: "whitegrid"
-
+bsts:
+  enabled: false
 
 # 💾 Output Settings
 output:
