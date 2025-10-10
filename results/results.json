@@ -1,7 +1,7 @@
 {
-    "did_att": -245.81709365317272,
-    "did_se": 166.37498721677002,
-    "psm_att": -105.19726923395444,
+    "did_att": -245.81709365317363,
+    "did_se": 166.37498721676891,
+    "psm_att": -113.47203494824016,
     "bsts_att": null,
     "meta": {
         "psm_reason": null,
@@ -11,16 +11,16 @@
             "covars": [
                 "incidence"
             ],
-            "ps_overlap_low": 0.049976618284577924,
-            "ps_overlap_high": 0.1727652977572611,
+            "ps_overlap_low": 0.049976618284575954,
+            "ps_overlap_high": 0.17276529775726043,
             "n_treat_pre_cs": 125,
             "n_ctrl_pre_cs": 679,
-            "caliper": 0.051934285731218166,
+            "caliper": 0.05193428573121953,
             "n_matched": 125
         },
         "bsts_reason": "BSTS disabled via config.",
         "n_rows": 4760,
         "n_regions": 34
     },
-    "timestamp": "2025-10-05T04:22:22.974457+00:00"
+    "timestamp": "2025-10-10T00:28:14.997732+00:00"
 }
