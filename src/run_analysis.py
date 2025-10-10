@@ -250,11 +250,11 @@ else:
 # Save & Print Results
 # ---------------------------
 output_data ={
-  "did": {"att": null},
-  "psm": {"att": null},
-  "bsts": {"att": null},
-  "artifacts": {},
-  "metadata": {}
+    "did": {...},        # Your DID results here
+    "psm": {...},        # Your PSM results here
+    "bsts": {...},       # Your BSTS results here
+    "artifacts": {...},
+    "metadata": {...}
 } {
         "psm_reason": psm_reason,
         "psm_diagnostics": psm_diag,
