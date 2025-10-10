@@ -249,12 +249,13 @@ else:
 # ---------------------------
 # Save & Print Results
 # ---------------------------
-output_data = {
-    "did_att": did_att,
-    "did_se": did_se,
-    "psm_att": psm_att,
-    "bsts_att": bsts_att,
-    "meta": {
+output_data ={
+  "did": {"att": null},
+  "psm": {"att": null},
+  "bsts": {"att": null},
+  "artifacts": {},
+  "metadata": {}
+} {
         "psm_reason": psm_reason,
         "psm_diagnostics": psm_diag,
         "bsts_reason": bsts_reason,
