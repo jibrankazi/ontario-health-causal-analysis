@@ -249,28 +249,18 @@ else:
 # ---------------------------
 # Save & Print Results
 # ---------------------------
-output_data ={
+output_data = {
     "did": {...},        # Your DID results here
     "psm": {...},        # Your PSM results here
     "bsts": {...},       # Your BSTS results here
     "artifacts": {...},
-    "metadata": {...}
-    
-} {
-        "psm_reason": psm_reason,
-        "psm_diagnostics": psm_diag,
-        "bsts_reason": bsts_reason,
-        "n_rows": int(len(df)),
-        "n_regions": int(df["region"].nunique()),
-    },
+    "metadata": {...},
+    "psm_reason": psm_reason,
+    "psm_diagnostics": psm_diag,
+    "bsts_reason": bsts_reason,
+    "n_rows": int(len(df)),
+    "n_regions": int(df["region"].nunique()),
     "timestamp": datetime.now(timezone.utc).isoformat(),
-}
-result = {
-    "did": did_results,
-    "psm": psm_results,
-    "bsts": bsts_results,
-    "artifacts": artifacts,
-    "metadata": metadata
 }
 (results_dir / "results.json").write_text(json.dumps(output_data, indent=4), encoding="utf-8")
 
