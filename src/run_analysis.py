@@ -255,6 +255,7 @@ output_data ={
     "bsts": {...},       # Your BSTS results here
     "artifacts": {...},
     "metadata": {...}
+    
 } {
         "psm_reason": psm_reason,
         "psm_diagnostics": psm_diag,
@@ -264,7 +265,13 @@ output_data ={
     },
     "timestamp": datetime.now(timezone.utc).isoformat(),
 }
-
+result = {
+    "did": did_results,
+    "psm": psm_results,
+    "bsts": bsts_results,
+    "artifacts": artifacts,
+    "metadata": metadata
+}
 (results_dir / "results.json").write_text(json.dumps(output_data, indent=4), encoding="utf-8")
 
 print("\n--- Analysis Complete ---")
