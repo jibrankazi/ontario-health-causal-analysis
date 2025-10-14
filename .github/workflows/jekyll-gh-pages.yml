@@ -1,4 +1,18 @@
-# ... your existing content above ...
+name: Deploy site to Pages
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -16,14 +30,19 @@ jobs:
           source: ./
           destination: ./_site
 
-      # ⬇️ Add this step
       - name: Copy report & figure into site
+        shell: bash
         run: |
-          # Make report the site index
-          cp -f reports/report.html _site/index.html
+          set -euo pipefail
+          # Make report the site index if it exists
+          if [ -f "reports/report.html" ]; then
+            cp -f reports/report.html _site/index.html
+          fi
           # Optionally publish the ATT figure alongside it
           mkdir -p _site/assets
-          [ -f figures/att_summary.png ] && cp figures/att_summary.png _site/assets/
+          if [ -f "figures/att_summary.png" ]; then
+            cp figures/att_summary.png _site/assets/
+          fi
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
@@ -31,4 +50,12 @@ jobs:
           path: _site
 
   deploy:
-    # ... unchanged ...
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
