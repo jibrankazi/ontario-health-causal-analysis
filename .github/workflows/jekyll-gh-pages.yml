@@ -2,7 +2,7 @@ name: Deploy site to Pages
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main ]   # ← change if your default branch isn’t main
   workflow_dispatch:
 
 permissions:
@@ -24,25 +24,26 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Build with Jekyll
-        uses: actions/jekyll-build-pages@v1
-        with:
-          source: ./
-          destination: ./_site
-
-      - name: Copy report & figure into site
+      # Prepare content BEFORE Jekyll builds
+      - name: Prepare site content
         shell: bash
         run: |
           set -euo pipefail
           # Make report the site index if it exists
           if [ -f "reports/report.html" ]; then
-            cp -f reports/report.html _site/index.html
+            cp -f reports/report.html ./index.html
           fi
-          # Optionally publish the ATT figure alongside it
-          mkdir -p _site/assets
+          # Optionally include the ATT figure
           if [ -f "figures/att_summary.png" ]; then
-            cp figures/att_summary.png _site/assets/
+            mkdir -p assets
+            cp -f figures/att_summary.png assets/
           fi
+
+      - name: Build with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./
+          destination: ./_site
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
