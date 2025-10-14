@@ -126,7 +126,7 @@ If you use this work or adapt the methodology, please cite:
   author = {Kazi, Jibran Rafat Samie},
   title = {Ontario Health Causal Analysis: Reproducible Policy Evaluation using DiD, PSM, and BSTS},
   year = {2025},
-  url = {https://jibrankazi.github.io/ontario-health-causal-analysis/},
+  url = https://jibrankazi.github.io/ontario-health-causal-analysis,
   license = {MIT}
 }
 
