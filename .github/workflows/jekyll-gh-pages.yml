@@ -2,14 +2,16 @@ name: Deploy site to Pages
 
 on:
   push:
-    branches: [ main ]   # ← change if your default branch isn’t main
+    branches: [ main ]
   workflow_dispatch:
 
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
+# Allow only one concurrent deployment for the "pages" group
 concurrency:
   group: "pages"
   cancel-in-progress: true
@@ -21,35 +23,59 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # === 1. RUN THE PYTHON ANALYSIS ===
+      # This runs your scripts to generate the reports/ and figures/ content
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10' # <-- Verify this version
+          cache: 'pip'
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+      - name: Run Causal Analysis Pipeline
+        run: |
+          python scripts/clean_all.py
+          python src/run_analysis.py
+          python scripts/regenerate_figures.py
+          python scripts/build_html_report.py
+      
+      # === 2. PREPARE THE SITE FOR JEKYLL ===
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      # Prepare content BEFORE Jekyll builds
+      # This step copies your generated report to be the main index.html
       - name: Prepare site content
         shell: bash
         run: |
           set -euo pipefail
           # Make report the site index if it exists
           if [ -f "reports/report.html" ]; then
-            cp -f reports/report.html ./index.html
+            cp -f reports/report.html./index.html
+            echo "Set reports/report.html as index.html"
+          else
+            echo "ERROR: reports/report.html not found after analysis!"
+            exit 1
           fi
           # Optionally include the ATT figure
           if [ -f "figures/att_summary.png" ]; then
             mkdir -p assets
             cp -f figures/att_summary.png assets/
+            echo "Copied ATT figure to assets/"
           fi
 
+      # === 3. BUILD AND UPLOAD ===
       - name: Build with Jekyll
         uses: actions/jekyll-build-pages@v1
         with:
-          source: ./
-          destination: ./_site
+          source:./
+          destination:./_site
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
 
+  # === 4. DEPLOY THE SITE ===
   deploy:
     needs: build
     runs-on: ubuntu-latest
