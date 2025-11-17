@@ -41,8 +41,7 @@ def main():
     psm = pick_att(r, "PSM")
     bsts = pick_att(r, "BSTS")
 
-    # This is the full HTML string, reconstructed from your screenshots.
-    # The 'Reproducibility' section is now fixed.
+    # This is the full HTML string, with all corrections applied.
     html = f"""<!doctype html>
 <html>
 <head>
@@ -50,18 +49,17 @@ def main():
   <title>Causal Analysis Report</title>
   <style>
     body{{font-family:Segoe UI,Arial,sans-serif;margin:24px auto;max-width:800px;line-height:1.6}}
-   .card{{border:1px solid #eee;border-radius:12px;padding:16px 24px;margin:24px 0}}
-   .table{{border-collapse:collapse;width:100%}}
-   .table td,.table th{{border-bottom:1px solid #eee;padding:8px 6px;text-align:left}}
-   .table th{{width:80px}}
+  .card{{border:1px solid #eee;border-radius:12px;padding:16px 24px;margin:24px 0}}
+  .table{{border-collapse:collapse;width:100%}}
+  .table td,.table th{{border-bottom:1px solid #eee;padding:8px 6px;text-align:left}}
+  .table th{{width:80px}}
     img{{max-width:100%;height:auto;border:1px solid #eee;border-radius:8px;margin-top:10px}}
-   .badge{{background:#f5f5f5;border-radius:999px;padding:4px 10px;font-size:12px;color:#333}}
+  .badge{{background:#f5f5f5;border-radius:999px;padding:4px 10px;font-size:12px;color:#333}}
     h1{{margin-bottom:8px}}
     h2{{margin-top:0}}
     p{{margin-bottom:0}}
     ul{{padding-left:20px}}
     li{{margin-bottom:8px}}
-    /* This style was missing and is needed for the gray blocks */
     code{{background:#f5f5f5;padding:3px 6px;border-radius:4px;font-family:monospace;font-size:0.95em}}
   </style>
 </head>
@@ -83,8 +81,10 @@ def main():
 
 <div class="card">
   <h2>Figure</h2>
-  <p>Bar chart comparing DiD, PSM, and BSTS ATT estimates (BSTS omitted if unavailable).</p>
+  {/* */}
   {('<img alt="att_summary" src="data:image/png;base64,' + b64(FIG) + '">') if FIG.exists() else '<p><b>No figure found.</b></p>'}
+  {/* */}
+  <p>Figure. ATT comparison across methods (BSTS omitted if unavailable).</p>
 </div>
 
 <div class="card" id="discussion">
@@ -96,7 +96,9 @@ def main():
   <h2>Reproducibility</h2>
   <ul>
     <li><code>Config: config.yaml (policy_date, covariates, output paths)</code></li>
+    {/* */}
     <li><code>Results (JSON):./results/results.json</code></li>
+    {/* */}
     <li><code>Figure:./figures/att_summary.png</code></li>
     <li><code>Pipeline: scripts/clean_all.py -- src/run_analysis.py -- scripts/regenerate_figures.py -- scripts/build_html_report.py</code></li>
   </ul>
