@@ -1,221 +1,305 @@
-# --------------------------------------------
-# Ontario Health Causal Analysis (DiD, PSM, optional BSTS via R/CausalImpact)
-# FINAL FIXED & PERFECT — November 17, 2025
-# --------------------------------------------
+# -----------------------------------------------------------------------------
+# ONTARIO HEALTH CAUSAL ANALYSIS (Reproducible Pipeline)
+# Methods: DiD (Diff-in-Diff), PSM (Propensity Score Matching), BSTS (CausalImpact)
+# Author: Kazi Jibran Rafat Samie
+# Date: November 17, 2025
+# -----------------------------------------------------------------------------
 from __future__ import annotations
 
 import json
+import math
 import os
 import random
 import subprocess
 import tempfile
-from datetime import datetime, timezone
+import warnings
 from pathlib import Path
-import math
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
 import statsmodels.formula.api as smf
 import yaml
+
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import NearestNeighbors
 
-# ============================================================
-# Determinism
-# ============================================================
-os.environ["PYTHONHASHSEED"] = "0"
-random.seed(42)
-np.random.seed(42)
+# Ignore irrelevant warnings for cleaner output
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
 
-# ============================================================
-# Config / Paths
-# ============================================================
+# =============================================================================
+# 1. DETERMINISTIC SETUP
+# =============================================================================
+def set_seed(seed=42):
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+
+set_seed()
+
+# =============================================================================
+# 2. CONFIGURATION & PATHS
+# =============================================================================
+# Dynamically find the project root relative to this script
 ROOT = Path(__file__).resolve().parents[1]
+RESULTS_DIR = ROOT / "results"
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+RESULTS_PATH = RESULTS_DIR / "results.json"
+
+# Load Config (with fallback)
 cfg_path = ROOT / "config.yaml"
-cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) if cfg_path.exists() else {}
+if cfg_path.exists():
+    with open(cfg_path, "r", encoding="utf-8") as f:
+        CFG = yaml.safe_load(f)
+else:
+    print("Warning: config.yaml not found. Using defaults.")
+    CFG = {}
 
-data_path = ROOT / cfg.get("data_path", "data/ontario_cases.csv")
-results_dir = ROOT / "results"
-results_dir.mkdir(parents=True, exist_ok=True)
-results_path = results_dir / "results.json"
+# Extract settings
+DATA_PATH = ROOT / CFG.get("data_path", "data/ontario_cases.csv")
+POLICY_DATE = CFG.get("policy_date", "2021-02-01")
+BSTS_ENABLED = bool((CFG.get("bsts") or {}).get("enabled", True))
 
-bsts_enabled = bool((cfg.get("bsts") or {}).get("enabled", True))
+# =============================================================================
+# 3. DATA LOADING & PREPROCESSING
+# =============================================================================
+print(f"--- Starting Analysis [Policy Date: {POLICY_DATE}] ---")
 
-# ============================================================
-# Load Data + AUTO INCIDENCE FIX
-# ============================================================
-if not data_path.exists():
-    raise FileNotFoundError(f"Data not found: {data_path}")
+if not DATA_PATH.exists():
+    raise FileNotFoundError(f"CRITICAL: Data file not found at {DATA_PATH}")
 
-df = pd.read_csv(data_path)
+# Load Data
+try:
+    df = pd.read_csv(DATA_PATH)
+except Exception as e:
+    raise ValueError(f"Failed to read CSV. Ensure columns are comma-separated. Error: {e}")
 
-# Auto-convert raw cases to incidence per 100k if needed
+# Auto-Calculate Incidence (if missing)
 if "cases" in df.columns and "incidence" not in df.columns:
-    print("Converting raw cases to incidence per 100,000")
+    print(">> Calculating incidence per 100k...")
     pop_map = {
         "Toronto": 2783000, "Peel": 1489000, "York": 1237000, "Durham": 697000,
         "Ottawa": 1010000, "Halton": 580000, "Hamilton": 569000, "Waterloo": 587000,
     }
+    # Default to 500k for unknown regions to avoid division by zero
     df["population"] = df["region"].map(pop_map).fillna(500000)
     df["incidence"] = df["cases"] * 100000 / df["population"]
 
-required = {"week", "region", "incidence", "treated"}
-if missing := required - set(df.columns):
-    raise ValueError(f"Missing columns: {missing}")
+# Validation
+required_cols = {"week", "region", "incidence", "treated"}
+if not required_cols.issubset(df.columns):
+    raise ValueError(f"Data missing required columns: {required_cols - set(df.columns)}")
 
+# Date Handling
 df["week"] = pd.to_datetime(df["week"], errors="coerce")
-if "post" not in df.columns:
-    df["post"] = (df["week"] >= pd.Timestamp(cfg.get("policy_date", "2021-02-01"))).astype(int)
-df = df.dropna(subset=["week"]).copy()
+df = df.dropna(subset=["week"]).sort_values("week")
+df["post"] = (df["week"] >= pd.Timestamp(POLICY_DATE)).astype(int)
 
-# ============================================================
-# DiD
-# ============================================================
+print(f">> Data Loaded: {len(df)} observations across {df['region'].nunique()} regions.")
+
+# =============================================================================
+# 4. METHOD 1: DIFFERENCE-IN-DIFFERENCES (DiD)
+# =============================================================================
+print("\n--- Running Method 1: DiD ---")
 df["treat_post"] = df["treated"] * df["post"]
-did_model = smf.ols("incidence ~ C(region) + C(week) + treat_post", data=df).fit(
-    cov_type="cluster", cov_kwds={"groups": df["region"]}
-)
-did_att = float(did_model.params.get("treat_post", math.nan))
-did_se = float(did_model.bse.get("treat_post", math.nan))
 
-# ============================================================
-# PSM — FULLY FIXED
-# ============================================================
+# OLS with Two-Way Fixed Effects (Region + Week) and Clustered Errors
+model = smf.ols("incidence ~ C(region) + C(week) + treat_post", data=df)
+did_res = model.fit(cov_type="cluster", cov_kwds={"groups": df["region"]})
+
+did_att = did_res.params.get("treat_post", np.nan)
+did_se = did_res.bse.get("treat_post", np.nan)
+
+print(f"   DiD ATT: {did_att:.2f} (SE: {did_se:.2f})")
+
+# =============================================================================
+# 5. METHOD 2: PROPENSITY SCORE MATCHING (PSM)
+# =============================================================================
+print("\n--- Running Method 2: PSM ---")
 psm_att = None
-psm_reason = None
-psm_diag = {}
+psm_meta = {"status": "skipped", "matches": 0}
 
 try:
-    pre = df[df["post"] == 0].copy()
-    drop_cols = {"week", "region", "incidence", "treated", "post", "treat_post"}
-    covars = [c for c in pre.columns if c not in drop_cols and pd.api.types.is_numeric_dtype(pre[c])]
-    if not covars:
-        covars = ["incidence"]
+    # 1. Train Propensity Model on Pre-Period Data
+    pre_data = df[df["post"] == 0].copy()
+    
+    # Use numeric columns as covariates (excluding structural cols)
+    exclude = {"week", "region", "incidence", "treated", "post", "treat_post", "population"}
+    covars = [c for c in pre_data.columns if c not in exclude and pd.api.types.is_numeric_dtype(pre_data[c])]
+    if not covars: 
+        covars = ["incidence"] # Fallback
 
-    X = pre[covars].fillna(pre[covars].median(numeric_only=True))
-    y = pre["treated"]
-    lr = LogisticRegression(max_iter=500, random_state=42)
+    # Impute and Fit
+    X = pre_data[covars].fillna(pre_data[covars].median())
+    y = pre_data["treated"]
+    
+    lr = LogisticRegression(max_iter=1000, random_state=42)
     lr.fit(X, y)
-    pre["ps"] = lr.predict_proba(X)[:, 1]
+    pre_data["ps"] = lr.predict_proba(X)[:, 1]
 
-    # Common support
-    low = max(pre[pre["treated"] == 1]["ps"].min(), pre[pre["treated"] == 0]["ps"].min())
-    high = min(pre[pre["treated"] == 1]["ps"].max(), pre[pre["treated"] == 0]["ps"].max())
-    pre_cs = pre[pre["ps"].between(low, high)].copy()
+    # 2. Enforce Common Support
+    ps_treat = pre_data[pre_data["treated"] == 1]["ps"]
+    ps_ctrl = pre_data[pre_data["treated"] == 0]["ps"]
+    
+    min_support = max(ps_treat.min(), ps_ctrl.min())
+    max_support = min(ps_treat.max(), ps_ctrl.max())
+    
+    supported = pre_data[pre_data["ps"].between(min_support, max_support)].copy()
 
-    # Caliper
-    eps = 1e-6
-    logit_ps = np.log((pre_cs["ps"] + eps) / (1 - pre_cs["ps"] + eps))
+    # 3. Matching with Caliper (0.2 * std of logit PS)
+    logit_ps = np.log(supported["ps"] / (1 - supported["ps"] + 1e-9))
     caliper = 0.2 * logit_ps.std()
-    psm_diag["caliper"] = float(caliper)
+    
+    treat_grp = supported[supported["treated"] == 1]
+    ctrl_grp = supported[supported["treated"] == 0]
 
-    treats = pre_cs[pre_cs["treated"] == 1]
-    controls = pre_cs[pre_cs["treated"] == 0]
     nn = NearestNeighbors(n_neighbors=1)
-    nn.fit(controls[["ps"]])
-    distances, indices = nn.kneighbors(treats[["ps"]])
+    nn.fit(ctrl_grp[["ps"]])
+    distances, indices = nn.kneighbors(treat_grp[["ps"]])
 
-    matched_pairs = []  # ← FIXED
-    d = distances.flatten()
-    j = indices.flatten()
-    for i in range(len(treats)):
-        if d[i] <= caliper:
-            matched_pairs.append((treats.iloc[i], controls.iloc[j[i]]))
-    psm_diag["n_matched"] = len(matched_pairs)
+    # Filter matches by caliper
+    matched_pairs = []
+    dist_flat = distances.flatten()
+    idx_flat = indices.flatten()
+
+    for i, dist in enumerate(dist_flat):
+        if dist <= caliper:
+            # Store (Treated Row, Control Row)
+            control_idx = idx_flat[i]
+            matched_pairs.append((treat_grp.iloc[i], ctrl_grp.iloc[control_idx]))
+
+    psm_meta["matches"] = len(matched_pairs)
+    psm_meta["caliper"] = caliper
 
     if not matched_pairs:
-        raise RuntimeError("No matches within caliper")
+        print("   Warning: No matches found within caliper.")
+    else:
+        # 4. Calculate ATT on Post-Period Data
+        post_data = df[df["post"] == 1]
+        post_means = post_data.groupby("region")["incidence"].mean()
+        
+        att_diffs = []
+        for t_row, c_row in matched_pairs:
+            t_reg = t_row["region"]
+            c_reg = c_row["region"]
+            
+            # Only calculate if both regions exist in post-period
+            if t_reg in post_means.index and c_reg in post_means.index:
+                effect = post_means[t_reg] - post_means[c_reg]
+                att_diffs.append(effect)
 
-    post = df[df["post"] == 1]
-    post_mean = post.groupby("region")["incidence"].mean()
-
-    diffs = []  # ← FIXED
-    for t_row, c_row in matched_pairs:
-        t_reg = t_row["region"]
-        c_reg = c_row["region"]
-        if t_reg in post_mean.index and c_reg in post_mean.index:
-            diffs.append(float(post_mean[t_reg] - post_mean[c_reg]))
-
-    if not diffs:
-        raise RuntimeError("No valid post-period matches")
-
-    psm_att = float(np.mean(diffs))
+        if att_diffs:
+            psm_att = float(np.mean(att_diffs))
+            psm_meta["status"] = "success"
+            print(f"   PSM ATT: {psm_att:.2f} (Matches: {len(matched_pairs)})")
+        else:
+            print("   Warning: Matches found but no post-period data available.")
 
 except Exception as e:
-    psm_reason = f"PSM failed: {e}"
+    psm_meta["error"] = str(e)
+    print(f"   PSM Failed: {e}")
 
-# ============================================================
-# BSTS (optional)
-# ============================================================
-def _bsts_via_rscript(agg_df: pd.DataFrame) -> float:
-    with tempfile.TemporaryDirectory() as td:
-        td_path = Path(td)
-        csv_path = td_path / "series.csv"
-        out_path = td_path / "out.json"
-        agg_df.to_csv(csv_path, index=False)
-        policy_date_str = pd.Timestamp(cfg.get("policy_date", "2021-02-01")).strftime("%Y-%m-%d")
-        pre_start = agg_df["week"].min().strftime("%Y-%m-%d")
-        pre_end = (pd.to_datetime 
-
-        r_code = f"""
-        suppressPackageStartupMessages(library(CausalImpact))
-        suppressPackageStartupMessages(library(jsonlite))
-        dat <- read.csv("{csv_path.as_posix()}")
-        dat$week <- as.Date(dat$week)
-        pre.period <- as.Date(c("{pre_start}", "{pre_end}"))
-        post.period <- as.Date(c("{policy_date_str}", "{post_end}"))
-        ci <- CausalImpact(dat$incidence, pre.period, post.period)
-        res <- list(bsts_att = as.numeric(ci$summary$AbsEffect["Average"]))
-        write(jsonlite::toJSON(res, auto_unbox=TRUE), "{out_path.as_posix()}")
-        """
-        r_script_path = td_path / "run_ci.R"
-        r_script_path.write_text(r_code, encoding="utf-8")
-        subprocess.run(["Rscript", str(r_script_path)], check=True, capture_output=True, text=True)
-        out = json.loads(out_path.read_text(encoding="utf-8"))
-        return float(out["bsts_att"])
-
+# =============================================================================
+# 6. METHOD 3: BAYESIAN STRUCTURAL TIME SERIES (BSTS via R)
+# =============================================================================
+print("\n--- Running Method 3: BSTS (R/CausalImpact) ---")
 bsts_att = None
-bsts_reason = "BSTS disabled via config." if not bsts_enabled else None
-if bsts_enabled:
+bsts_meta = {"enabled": BSTS_ENABLED}
+
+if BSTS_ENABLED:
     try:
-        agg = df.groupby("week", as_index=False)["incidence"].mean()
-        bsts_att = _bsts_via_rscript(agg)
+        # Prepare Aggregate Time Series
+        ts_data = df.groupby("week", as_index=False)["incidence"].mean()
+        
+        # Define Dates CORRECTLY
+        policy_dt = pd.Timestamp(POLICY_DATE)
+        pre_end_dt = policy_dt - pd.Timedelta(days=1) # Day before policy
+        post_end_dt = ts_data["week"].max()
+
+        # Format for R
+        fmt = "%Y-%m-%d"
+        r_params = {
+            "pre_start": ts_data["week"].min().strftime(fmt),
+            "pre_end": pre_end_dt.strftime(fmt),
+            "post_start": policy_dt.strftime(fmt),
+            "post_end": post_end_dt.strftime(fmt)
+        }
+
+        # Execute via RScript
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            data_csv = tmp_path / "data.csv"
+            out_json = tmp_path / "out.json"
+            
+            ts_data.to_csv(data_csv, index=False)
+
+            r_script = f"""
+            suppressMessages(library(CausalImpact))
+            suppressMessages(library(jsonlite))
+            
+            df <- read.csv("{data_csv.as_posix()}")
+            df$week <- as.Date(df$week)
+            
+            pre.period <- as.Date(c("{r_params['pre_start']}", "{r_params['pre_end']}"))
+            post.period <- as.Date(c("{r_params['post_start']}", "{r_params['post_end']}"))
+            
+            impact <- CausalImpact(df$incidence, pre.period, post.period)
+            
+            # Extract Average Absolute Effect
+            res <- list(bsts_att = as.numeric(impact$summary$AbsEffect["Average"]))
+            write(toJSON(res, auto_unbox=TRUE), "{out_json.as_posix()}")
+            """
+            
+            r_file = tmp_path / "script.R"
+            r_file.write_text(r_script, encoding="utf-8")
+
+            # Run R
+            subprocess.run(["Rscript", str(r_file)], check=True, capture_output=True, text=True)
+            
+            # Read Result
+            bsts_res = json.loads(out_json.read_text())
+            bsts_att = bsts_res.get("bsts_att")
+            print(f"   BSTS ATT: {bsts_att:.2f}")
+            
     except Exception as e:
-        bsts_reason = f"BSTS failed: {e}"
+        bsts_meta["error"] = str(e)
+        print(f"   BSTS Failed (Check if R/CausalImpact is installed): {e}")
+else:
+    print("   BSTS Disabled in config.")
 
-# ============================================================
-# Save Results
-# ============================================================
-def _jsonable(x):
-    if x is None or isinstance(x, (str, int, float, bool)):
-        return x
-    if isinstance(x, np.generic):
-        return x.item()
-    if isinstance(x, np.ndarray):
-        return x.tolist()
-    if isinstance(x, (pd.Timestamp, datetime)):
-        return x.isoformat()
-    if isinstance(x, Path):
-        return str(x)
-    if isinstance(x, dict):
-        return {k: _jsonable(v) for k, v in x.items()}
-    if isinstance(x, (list, tuple, set)):
-        return [_jsonable(v) for v in x]
-    return str(x)
+# =============================================================================
+# 7. SAVING RESULTS
+# =============================================================================
+def safe_serialize(obj):
+    """Helper to ensure JSON compatibility for numpy types"""
+    if isinstance(obj, (np.generic, np.number)):
+        return obj.item() if not np.isnan(obj) else None
+    if isinstance(obj, float) and np.isnan(obj):
+        return None
+    return obj
 
-output_data = {
+final_output = {
     "did": {
-        "att": None if math.isnan(did_att) else float(did_att),
-        "se": None if math.isnan(did_se) else float(did_se),
-        "n_obs": int(len(df)),
-        "n_regions": int(df["region"].nunique()),
+        "att": safe_serialize(did_att),
+        "se": safe_serialize(did_se),
+        "n_obs": len(df)
     },
-    "psm": {"att": psm_att, "reason": psm_reason, "diagnostics": psm_diag},
-    "bsts": {"att": bsts_att, "reason": bsts_reason},
-    "metadata": {"policy_date": str(cfg.get("policy_date", "2021-02-01")), "bsts_enabled": bsts_enabled},
-    "artifacts": {"results_path": str(results_path), "data_path": str(data_path)},
+    "psm": {
+        "att": safe_serialize(psm_att),
+        "meta": psm_meta
+    },
+    "bsts": {
+        "att": safe_serialize(bsts_att),
+        "meta": bsts_meta
+    },
+    "metadata": {
+        "timestamp": datetime.now().isoformat(),
+        "policy_date": str(POLICY_DATE)
+    }
 }
 
-results_path.write_text(json.dumps(_jsonable(output_data), indent=4), encoding="utf-8")
-print("\n--- Analysis Complete — Realistic Results Generated ---")
-print(f"DiD ATT: {did_att:.2f} | PSM ATT: {psm_att:.2f if psm_att else 'N/A'}")
+with open(RESULTS_PATH, "w", encoding="utf-8") as f:
+    json.dump(final_output, f, indent=4, default=str)
+
+print(f"\n>> Success! Results saved to: {RESULTS_PATH}")
