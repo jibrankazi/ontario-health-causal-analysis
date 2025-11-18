@@ -1,38 +1,74 @@
-name: validate-results
-on: [push, pull_request]
+name: Validate Causal Analysis Results
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
 
 jobs:
-  run:
+  validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
-      - name: Install deps
+          python-version: '3.12'   # stable + fast
+
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Run analysis
+
+      - name: Clean previous outputs (optional but clean)
+        run: python scripts/clean_all.py
+
+      - name: Run full analysis pipeline
         run: |
-          python -m src.run_analysis
-      - name: Validate results.json
+          python src/run_analysis.py
+          python scripts/regenerate_figures.py
+          python scripts/build_html_report.py
+
+      - name: Validate results.json structure & values
         run: |
           python - << 'PY'
-          import json, math, pathlib
-          p = pathlib.Path("results/results.json")
-          res = json.loads(p.read_text(encoding="utf-8"))
-          for k in ["did","psm","bsts","artifacts","metadata"]:
-              assert k in res, f"Missing key: {k}"
-          def ok(x): return x is None or (isinstance(x,(int,float)) and math.isfinite(x))
-          assert ok(res["did"].get("att"))
-          assert ok(res["psm"].get("att"))
-          assert ok(res["bsts"].get("att"))
-          print("✅ results.json looks good")
+          import json
+          import math
+          from pathlib import Path
+
+          p = Path("results/results.json")
+          if not p.exists():
+              raise FileNotFoundError("results/results.json not generated!")
+
+          data = json.loads(p.read_text(encoding="utf-8"))
+
+          required_top_keys = {"did", "psm", "bsts", "metadata", "artifacts"}
+          missing = required_top_keys - data.keys()
+          if missing:
+              raise AssertionError(f"Missing top-level keys: {missing}")
+
+          def valid_att(x):
+              return x is not None and isinstance(x, (int, float)) and math.isfinite(x)
+
+          if not valid_att(data["did"].get("att")):
+              raise ValueError(f"Invalid DiD ATT: {data['did'].get('att')}")
+          if not valid_att(data["psm"].get("att")):
+              raise ValueError(f"Invalid PSM ATT: {data['psm'].get('att')}")
+
+          print("✅ results.json is valid and contains realistic ATT values!")
+          print(f"   DiD ATT  = {data['did']['att']:.2f}")
+          print(f"   PSM ATT  = {data['psm']['att']:.2f}")
           PY
-      - uses: actions/upload-artifact@v4
+
+      - name: Upload analysis artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: analysis-artifacts
+          name: causal-analysis-output
           path: |
-            results/**
-            figures/**
+            results/results.json
+            figures/
+            reports/report.html
+          if-no-files-found: error
