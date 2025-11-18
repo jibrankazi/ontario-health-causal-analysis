@@ -165,7 +165,7 @@ try:
     dist, idx = nn.kneighbors(treats[["ps"]].to_numpy())
 
     # Filter matches by caliper
-    matched_pairs =  # <--- SYNTAX FIX: This line was incomplete
+    matched_pairs =  # <--- SYNTAX FIX 1
     d = dist.flatten()
     j = idx.flatten()
     for i in range(len(treats)):
@@ -181,7 +181,7 @@ try:
     post = df[df["post"] == 1].copy()
     post_mean_incidence = post.groupby("region", as_index=True)["incidence"].mean()
 
-    diffs =  # <--- SYNTAX FIX: This line was incomplete
+    diffs =  # <--- SYNTAX FIX 2
     for t_row, c_row in matched_pairs:
         t_reg, c_reg = t_row["region"], c_row["region"]
         if (t_reg in post_mean_incidence.index) and (c_reg in post_mean_incidence.index):
@@ -237,7 +237,7 @@ def _bsts_via_rscript(agg_df: pd.DataFrame) -> float:
         r_script_path.write_text(r_code, encoding="utf-8")
 
         # Run Rscript (surface stdout/stderr only on failure)
-        subprocess.run(, check=True, capture_output=True, text=True)  # <-- SYNTAX FIX
+        subprocess.run(, check=True, capture_output=True, text=True)  # <--- SYNTAX FIX 3
 
         out = json.loads(out_path.read_text(encoding="utf-8"))
         return float(out["bsts_att"])
@@ -286,7 +286,7 @@ def _jsonable(x):
 
     # Dicts / lists
     if isinstance(x, dict):
-        return {k: _jsonable(v) for k, v in x.items()}  # <-- SYNTAX FIX
+        return {k: _jsonable(v) for k, v in x.items()}  # <--- SYNTAX FIX 4
     if isinstance(x, list):
         return [_jsonable(v) for v in x]
 
@@ -298,7 +298,7 @@ def _jsonable(x):
     return str(x)
 
 did_results = {
-    "att": None if (did_att is None or math.isnan(did_att)) else float(did_att),  # <-- SYNTAX FIX
+    "att": None if (did_att is None or math.isnan(did_att)) else float(did_att),  # <--- SYNTAX FIX 5
     "se": None if (did_se is None or math.isnan(did_se)) else float(did_se),
     "n_obs": int(len(df)),
     "n_regions": int(df["region"].nunique()),
