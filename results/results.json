@@ -4,20 +4,12 @@
         "se": 105.796180643379
     },
     "psm": {
-        "att": -121.53419225739543,
-        "meta": {
-            "status": "skipped",
-            "matches": 220
-        }
+        "att": -119.85365259740263
     },
     "bsts": {
-        "att": null,
-        "meta": {
-            "enabled": true
-        }
+        "att": null
     },
     "metadata": {
-        "timestamp": "2025-11-17T22:53:32.233448",
-        "policy_date": "2021-02-01"
+        "policy": "2021-02-01"
     }
 }
