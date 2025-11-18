@@ -23,15 +23,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # === 1. RUN THE PYTHON ANALYSIS ===
-      # This runs your scripts to generate the reports/ and figures/ content
+      # === 1. INSTALLS "requirements.txt" (from Turn 41) ===
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10' # <-- Verify this version
+          python-version: '3.10' # Based on your requirements.txt
           cache: 'pip'
       - name: Install Python dependencies
         run: pip install -r requirements.txt
+      
+      # === 2. RUNS "src/run_analysis.py" (from Turn 43) ===
       - name: Run Causal Analysis Pipeline
         run: |
           python scripts/clean_all.py
@@ -39,11 +40,9 @@ jobs:
           python scripts/regenerate_figures.py
           python scripts/build_html_report.py
       
-      # === 2. PREPARE THE SITE FOR JEKYLL ===
+      # === 3. PREPARES THE GENERATED REPORT ===
       - name: Setup Pages
         uses: actions/configure-pages@v5
-
-      # This step copies your generated report to be the main index.html
       - name: Prepare site content
         shell: bash
         run: |
@@ -63,19 +62,18 @@ jobs:
             echo "Copied ATT figure to assets/"
           fi
 
-      # === 3. BUILD AND UPLOAD ===
+      # === 4. BUILDS AND UPLOADS THE SITE ===
       - name: Build with Jekyll
         uses: actions/jekyll-build-pages@v1
         with:
           source:./
           destination:./_site
-
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
 
-  # === 4. DEPLOY THE SITE ===
+  # === 5. DEPLOYS THE SITE ===
   deploy:
     needs: build
     runs-on: ubuntu-latest
