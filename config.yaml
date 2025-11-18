@@ -7,7 +7,7 @@
 data_path: "data/ontario_cases.csv"
 # add this block at top level of config.yaml
 bsts:
-  enabled: false
+  enabled: true
 
 # 🗓️ Policy / Intervention date (YYYY-MM-DD)
 # This date splits the data into pre- and post-policy periods.
