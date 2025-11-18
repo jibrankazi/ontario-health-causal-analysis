@@ -1,0 +1,95 @@
+#.github/workflows/pages-deployment.yml
+#
+# This is the new, correct workflow for deploying the Python-based
+# static analysis report to GitHub Pages.
+
+name: Deploy Python Static Report to Pages
+
+# 1. Trigger: Run this workflow on every push to the 'main' branch.
+on:
+  push:
+    branches:
+      - main
+
+# 2. Permissions: This is CRITICAL.
+# The 'deploy' job requires 'pages: write' to deploy to GitHub Pages
+# and 'id-token: write' to authenticate.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 3. Concurrency: This prevents race conditions *within the workflow itself*.
+# It ensures only one deployment for this workflow runs at a time.
+# If a new push is made, it will cancel any in-progress run.
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------
+  # JOB 1: BUILD
+  # Purpose: Run the full Python analysis and build the static HTML report.
+  # ---------------------------------------------------------------
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # --- Setup ---
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        # Use a specific Python version for reproducibility.
+        # This helps prevent local-vs-remote errors (see Section VI).
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip' # Cache dependencies
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # --- Execution (from README.md) ---
+      - name: 1. Clean previous results
+        run: python scripts/clean_all.py
+
+      - name: 2. Run core analysis
+        run: python src/run_analysis.py
+
+      - name: 3. Regenerate figures
+        run: python scripts/regenerate_figures.py
+
+      - name: 4. Build HTML report
+        run: python scripts/build_html_report.py
+
+      # --- Artifact Generation ---
+      - name: 5. Create.nojekyll file
+        # This is CRITICAL. It tells GitHub Pages *not* to run its
+        # default Jekyll build process.
+        run: touch reports/.nojekyll
+
+      - name: 6. Upload artifact
+        # This packages the 'reports' directory into a 'github-pages' artifact.
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # This must match the output directory from the build scripts
+          path:./reports
+
+  # ---------------------------------------------------------------
+  # JOB 2: DEPLOY
+  # Purpose: Take the built artifact and deploy it to the Pages service.
+  # ---------------------------------------------------------------
+  deploy:
+    # 'deploy' will only run if 'build' succeeds
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }} # Sets the environment URL in GitHub
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        # This action retrieves the artifact and securely deploys it.
+        # It requires the 'pages: write' and 'id-token: write' permissions.
+        uses: actions/deploy-pages@v4
