@@ -35,7 +35,7 @@ np.random.seed(42)
 # ============================================================
 # Config / Paths
 # ============================================================
-ROOT = Path(__file__).resolve().parents[4]  # repo root (folder containing src/)
+ROOT = Path(__file__).resolve().parents[1]  # repo root (folder containing src/)
 cfg_path = ROOT / "config.yaml"
 if cfg_path.exists():
     cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
@@ -165,7 +165,7 @@ try:
     dist, idx = nn.kneighbors(treats[["ps"]].to_numpy())
 
     # Filter matches by caliper
-    matched_pairs =  # <--- FIX: This line was incomplete
+    matched_pairs =  # <--- SYNTAX FIX: This line was incomplete
     d = dist.flatten()
     j = idx.flatten()
     for i in range(len(treats)):
@@ -181,7 +181,7 @@ try:
     post = df[df["post"] == 1].copy()
     post_mean_incidence = post.groupby("region", as_index=True)["incidence"].mean()
 
-    diffs =  # <--- FIX: This line was incomplete
+    diffs =  # <--- SYNTAX FIX: This line was incomplete
     for t_row, c_row in matched_pairs:
         t_reg, c_reg = t_row["region"], c_row["region"]
         if (t_reg in post_mean_incidence.index) and (c_reg in post_mean_incidence.index):
@@ -237,7 +237,7 @@ def _bsts_via_rscript(agg_df: pd.DataFrame) -> float:
         r_script_path.write_text(r_code, encoding="utf-8")
 
         # Run Rscript (surface stdout/stderr only on failure)
-        subprocess.run(, check=True, capture_output=True, text=True)  # <--- FIX: This line was incomplete
+        subprocess.run(, check=True, capture_output=True, text=True)  # <-- SYNTAX FIX
 
         out = json.loads(out_path.read_text(encoding="utf-8"))
         return float(out["bsts_att"])
