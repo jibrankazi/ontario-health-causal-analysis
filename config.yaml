@@ -5,7 +5,7 @@
 # 📂 Data settings
 # Path to your dataset (relative to project root)
 data_path: "data/ontario_cases.csv"
-# add this block at top level of config.yaml
+policy_date: "2020-09-15"
 bsts:
   enabled: true
 
