@@ -32,7 +32,7 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
       
-      # === 2. RUNS "src/run_analysis.py" (from Turn 43 & 49) ===
+      # === 2. RUNS "src/run_analysis.py" (The Script We Just Fixed) ===
       - name: Run Causal Analysis Pipeline
         run: |
           python scripts/clean_all.py
@@ -62,12 +62,10 @@ jobs:
             echo "Copied ATT figure to assets/"
           fi
 
-      # === 4. BUILDS AND UPLOADS THE SITE (THIS FIXES THE SYNTAX ERROR) ===
+      # === 4. BUILDS AND UPLOADS THE SITE (Fix from Turn 56) ===
       - name: Build with Jekyll
         uses: actions/jekyll-build-pages@v1
         with:
-          # This 'with:' block must be indented,
-          # and 'source' and 'destination' must be on separate lines.
           source:./
           destination:./_site
 
