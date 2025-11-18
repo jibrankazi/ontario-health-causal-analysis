@@ -162,7 +162,7 @@ except Exception as e:
     print(f"   PSM Failed: {e}")
 
 # =============================================================================
-# 6. METHOD 3: BSTS (R/CausalImpact) - FIXED FOR DATES
+# 6. METHOD 3: BSTS (R/CausalImpact) - FINAL
 # =============================================================================
 print("\n--- Running Method 3: BSTS (R/CausalImpact) ---")
 bsts_att = None
@@ -189,7 +189,6 @@ if BSTS_ENABLED:
             out_json = tmp_path / "out.json"
             ts_data.to_csv(data_csv, index=False)
 
-            # --- R SCRIPT FIX: Uses 'zoo' to bind dates to data ---
             r_script = f"""
             suppressMessages(library(CausalImpact))
             suppressMessages(library(jsonlite))
@@ -197,8 +196,6 @@ if BSTS_ENABLED:
             
             df <- read.csv("{data_csv.as_posix()}")
             df$week <- as.Date(df$week)
-            
-            # Create ZOO Time Series Object (Crucial Fix)
             ts_data <- zoo(df$incidence, df$week)
             
             pre.period <- as.Date(c("{r_params['pre_start']}", "{r_params['pre_end']}"))
@@ -213,15 +210,24 @@ if BSTS_ENABLED:
             r_file = tmp_path / "script.R"
             r_file.write_text(r_script, encoding="utf-8")
             
-            # Run and capture full stderr for debugging if needed
             proc = subprocess.run(["Rscript", str(r_file)], capture_output=True, text=True)
             
             if proc.returncode != 0:
-                raise RuntimeError(f"R Error:\n{proc.stderr}")
+                raise RuntimeError(f"R Error output:\n{proc.stderr}")
                 
             bsts_res = json.loads(out_json.read_text())
-            bsts_att = bsts_res.get("bsts_att")
-            print(f"   BSTS ATT: {bsts_att:.2f}")
+            raw_att = bsts_res.get("bsts_att")
+            
+            # Robustly handle the result (float or string)
+            try:
+                bsts_att = float(raw_att) if raw_att is not None else None
+                if bsts_att is not None:
+                    print(f"   BSTS ATT: {bsts_att:.2f}")
+                else:
+                    print("   BSTS ATT: None (Model returned null)")
+            except ValueError:
+                bsts_att = None
+                print(f"   BSTS ATT: {raw_att} (Raw Output)")
             
     except Exception as e:
         bsts_meta["error"] = str(e)

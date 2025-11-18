@@ -1,26 +1,23 @@
 {
-    "did_att": -245.81709365317272,
-    "did_se": 166.37498721677002,
-    "psm_att": -105.19726923395444,
-    "bsts_att": null,
-    "meta": {
-        "psm_reason": null,
-        "psm_diagnostics": {
-            "n_treat_pre": 125,
-            "n_ctrl_pre": 725,
-            "covars": [
-                "incidence"
-            ],
-            "ps_overlap_low": 0.049976618284577924,
-            "ps_overlap_high": 0.1727652977572611,
-            "n_treat_pre_cs": 125,
-            "n_ctrl_pre_cs": 679,
-            "caliper": 0.051934285731218166,
-            "n_matched": 125
-        },
-        "bsts_reason": "BSTS disabled via config.",
-        "n_rows": 4760,
-        "n_regions": 34
+    "did": {
+        "att": -108.6127957375487,
+        "se": 105.796180643379
     },
-    "timestamp": "2025-10-05T04:22:22.974457+00:00"
+    "psm": {
+        "att": -121.53419225739543,
+        "meta": {
+            "status": "skipped",
+            "matches": 220
+        }
+    },
+    "bsts": {
+        "att": null,
+        "meta": {
+            "enabled": true
+        }
+    },
+    "metadata": {
+        "timestamp": "2025-11-17T22:53:32.233448",
+        "policy_date": "2021-02-01"
+    }
 }

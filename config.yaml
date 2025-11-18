@@ -11,7 +11,7 @@ bsts:
 
 # 🗓️ Policy / Intervention date (YYYY-MM-DD)
 # This date splits the data into pre- and post-policy periods.
-policy_date: "2020-09-15"
+policy_date: "2021-02-01"
 
 # 🧮 Covariates used for Propensity Score Matching (PSM)
 # You can change or add more covariates here.
