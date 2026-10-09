@@ -45,6 +45,9 @@ jobs:
           print('All good! DiD:', data['did']['att'], 'PSM:', data['psm']['att'])
           "
 
+      - name: Independently check raw case rows and reported causal uncertainty
+        run: python scripts/review_observed_inference.py
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -53,3 +56,4 @@ jobs:
             reports/report.html
             figures/
             results/results.json
+            results/independent_inference_review.json
