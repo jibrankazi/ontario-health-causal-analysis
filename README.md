@@ -1,3 +1,22 @@
+## Corrected inference after rerunning checked-in Ontario PHU cases — October 9, 2026
+
+[GitHub Actions full Python pipeline and independent uncertainty audit](https://github.com/jibrankazi/ontario-health-causal-analysis/actions/runs/37936162992) processed the checked-in dataset, with **4,760 weekly incidence rows across 34 health unit codes, 2020-03-30 through 2022-11-28**.
+
+| Rerun quantity | Outcome |
+| --- | ---: |
+| Effective configured policy date | 2021-02-01 |
+| Difference-in-differences point estimate | -108.61 |
+| DiD standard error | 105.80 |
+| Approximate normal 95% interval | **[-315.97, +98.75]** |
+| Propensity-score matching point estimate | -101.98 |
+| PSM uncertainty | Not available |
+| BSTS result | Not available |
+
+**Revised conclusion:** Although the point estimates are negative, the DiD confidence interval **crosses zero**, so this analysis does **not establish a statistically significant reduction**, let alone prove that a specific policy caused it. The historical README's stated PSM number -119.85 did not reproduce in this latest run (actual rerun -101.98), and parallel-trends assumptions and sensitivity remain unverified. **Independent comparison of the repository's data file against original Ontario public source records has not been completed**, so underlying source provenance is not certified. Do not use this as validated causal policy evidence.
+
+The later sections are historical material and can contain superseded claims. Use this dated section and the latest run JSON for the actual reproducible conclusions.
+
+---
 \# Ontario Health Causal Analysis: Policy Impact Evaluation
 
 
