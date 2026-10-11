@@ -1,145 +1,52 @@
-## Corrected inference after rerunning checked-in Ontario PHU cases — October 9, 2026
+# Ontario Health Causal Analysis — verified checked-in panel, but **causal effect not established**
 
-[GitHub Actions full Python pipeline and independent uncertainty audit](https://github.com/jibrankazi/ontario-health-causal-analysis/actions/runs/37936162992) processed the checked-in dataset, with **4,760 weekly incidence rows across 34 health unit codes, 2020-03-30 through 2022-11-28**.
+The repository contains a historic `data/ontario_cases.csv` panel with **4,760 weekly PHU incidence observations across 34 coded public health units and 140 weeks from 2020-03-30 through 2022-11-28**. New reproducible identification diagnostics test original-file completeness, apparent differences between labeled PHUs, pre-intervention divergence, and a pre-policy placebo cutoff, then produce actual input-row CSVs, an observed trend chart and a detailed audit.
 
-| Rerun quantity | Outcome |
+**[Automated checked-in PHU panel and pre-policy placebo audit](https://github.com/jibrankazi/ontario-health-causal-analysis/actions/workflows/real-phu-identification.yml)**.
+
+**Important:** The original CSV's row-level provenance **has not been independently reconciled to a Government of Ontario dataset**. The original file's `treated` flags identify **5 PHUs as treated and 29 as comparison**, but the repository does **not** document an externally verified basis for treating those five PHUs differently on February 1, 2021. A province-wide pandemic policy cannot automatically be studied by calling some Ontario health units "untreated." No measured government-verified causal policy impact is established.
+
+## What the actual existing panel checks show
+
+| Executed diagnostic | Original checked-in data result |
 | --- | ---: |
-| Effective configured policy date | 2021-02-01 |
-| Difference-in-differences point estimate | -108.61 |
-| DiD standard error | 105.80 |
-| Approximate normal 95% interval | **[-315.97, +98.75]** |
-| Propensity-score matching point estimate | -101.98 |
-| PSM uncertainty | Not available |
-| BSTS result | Not available |
-
-**Revised conclusion:** Although the point estimates are negative, the DiD confidence interval **crosses zero**, so this analysis does **not establish a statistically significant reduction**, let alone prove that a specific policy caused it. The historical README's stated PSM number -119.85 did not reproduce in this latest run (actual rerun -101.98), and parallel-trends assumptions and sensitivity remain unverified. **Independent comparison of the repository's data file against original Ontario public source records has not been completed**, so underlying source provenance is not certified. Do not use this as validated causal policy evidence.
-
-The later sections are historical material and can contain superseded claims. Use this dated section and the latest run JSON for the actual reproducible conclusions.
-
----
-\# Ontario Health Causal Analysis: Policy Impact Evaluation
-
-
-
-\*\*Author:\*\* Kazi Jibran Rafat Samie  
-
-\*\*Location:\*\* Toronto, Canada  
-
-\*\*Status:\*\* Complete (November 2025)
-
-
-
-!\[Python](https://img.shields.io/badge/Python-3.9%2B-blue)
-
-!\[R](https://img.shields.io/badge/R-4.0%2B-blue)
-
-!\[Status](https://img.shields.io/badge/Reproducibility-High-green)
-
-
-
-\## 📌 Abstract
-
-This independent research project evaluates the causal impact of Ontario's public health policy intervention (effective \*\*February 1, 2021\*\*) on regional COVID-19 case incidence. 
-
-
-
-Using a dataset of \*\*4,760 observations\*\* across 34 public health units, this analysis employs a multi-method causal inference pipeline to estimate the Average Treatment Effect on the Treated (ATT). The study triangulates results using \*\*Difference-in-Differences (DiD)\*\* and \*\*Propensity Score Matching (PSM)\*\* to ensure robustness.
-
-
-
-\## 📊 Key Findings
-
-
-
-| Method | Estimate (ATT) | Standard Error | Interpretation |
-
-| :--- | :--- | :--- | :--- |
-
-| \*\*DiD\*\* | \*\*-108.61\*\* | 105.80 | Policy associated with ~109 fewer cases per 100k. |
-
-| \*\*PSM\*\* | \*\*-119.85\*\* | N/A | Matching confirms reduction magnitude (~120 fewer cases). |
-
-| \*\*BSTS\*\* | \*Inconclusive\* | N/A | Pre-period volatility prevented Bayesian convergence. |
-
-
-
-\### Interpretation
-
-The analysis yields highly consistent point estimates between two distinct methodological frameworks:
-
-1\.  \*\*Robustness:\*\* The DiD estimate (-108.61) and PSM estimate (-119.85) are within \*\*~10%\*\* of each other. This convergence provides strong evidence for the direction and magnitude of the effect.
-
-2\.  \*\*Uncertainty:\*\* While the point estimates suggest a substantial reduction, the high standard error in the DiD model reflects the significant heterogeneity between Ontario's large urban centers (Toronto/Peel) and smaller rural regions.
-
-3\.  \*\*Data Constraints:\*\* The Bayesian Structural Time Series (BSTS) model returned `NA`, correctly identifying that the pre-intervention period (March 2020 – Jan 2021) contained insufficient stable seasonality to construct a reliable synthetic counterfactual.
-
-
-
-\## 🛠 Methodology
-
-
-
-\### 1. Difference-in-Differences (DiD)
-
-\* \*\*Specification:\*\* Two-way Fixed Effects (TWFE) model controlling for unit-invariant time trends and time-invariant unit characteristics.
-
-\* \*\*Standard Errors:\*\* Clustered at the region level to account for serial correlation.
-
-\* \*\*Equation:\*\* $Y\_{it} = \\alpha + \\beta (Treat\_i \\times Post\_t) + \\gamma\_i + \\delta\_t + \\epsilon\_{it}$
-
-
-
-\### 2. Propensity Score Matching (PSM)
-
-\* \*\*Technique:\*\* Logistic regression to estimate propensity scores based on pre-period incidence.
-
-\* \*\*Matching:\*\* Nearest Neighbor (k=1) with a strict caliper (0.2 \* SD of logit propensity score) to ensure common support.
-
-\* \*\*Validation:\*\* Caliper filtering removed poor matches to reduce bias.
-
-
-
-\### 3. Bayesian Structural Time Series (BSTS)
-
-\* \*\*Implementation:\*\* Integrated R's `CausalImpact` package via Python subprocess.
-
-\* \*\*Note:\*\* Used as a sensitivity check. The model found the pre-period signal-to-noise ratio too low for valid inference in this specific time window.
-
-
-
-\## 🚀 Reproducibility
-
-This pipeline is designed to be fully deterministic and reproducible.
-
-
-
-\### Prerequisites
-
-\* \*\*Python 3.9+\*\* (`pandas`, `statsmodels`, `sklearn`, `numpy`, `yaml`)
-
-\* \*\*R 4.x\*\* (`CausalImpact`, `jsonlite`, `zoo`)
-
-
-
-\### Installation
+| Historical PHU-week rows | **4,760** |
+| PHU codes / weeks | **34 / 140** |
+| PHU codes labeled treated / comparison | **5 / 29** |
+| Weekly observations before / on or after the assumed February 1, 2021 cutoff | **44 / 96** |
+| Missing PHU-week cells or within-region changing labels | **None detected** |
+| Pre-policy treated vs comparison **weekly trend difference** | **−12.11** source incidence units per week |
+| Pre-policy weekly trend approximate 95% CI | **[−25.28, +1.07]** |
+| Pre-policy *placebo* October 5, 2020 group DiD association | **−317.02** source incidence units |
+| Pre-policy placebo approximate 95% CI | **[−680.49, +46.45]** |
+| Original full-period post-minus-pre difference in group means | **−108.61** source incidence units |
+| Publisher-record and treatment-assignment source documentation independently verified | **No** |
+
+These are diagnostics on a checked-in dataset. The source's `incidence` column is used as recorded; its measurement units and derivation from original government case counts still require primary-source verification. The placebo difference is **entirely before the claimed policy date**, illustrating why negative group differences cannot simply be interpreted as effects of the February 2021 policy. A 95% interval crossing zero is *not* proof that parallel trends hold. The small treated-PHU cluster count is another reason to avoid strong significance claims.
+
+The previously reported difference-in-differences point estimate was about **−108.61**, with an approximate 95% CI of **[−315.97, +98.75]**, so zero is included even before addressing identification. The earlier matching figures were not consistently reproduced and do not establish a causal effect. Existing R BSTS claims remain unverified in current CI.
+
+## Run the new independent, actual-file diagnosis
 
 ```bash
+python -m pip install "numpy<3" pandas statsmodels matplotlib pytest
+python -m pytest -q tests/test_real_phu_identification_audit.py tests/test_data_contract.py
+python scripts/real_phu_identification_audit.py
+```
 
-\# 1. Clone the repository
+The new workflow reruns these tests, analyzes **all the checked-in records**, independently recomputes saved group means and confidence limits, validates the original file byte SHA-256, and publishes evidence as a GitHub Actions artifact.
 
-git clone \[https://github.com/jibrankazi/ontario-health-causal-analysis.git](https://github.com/jibrankazi/ontario-health-causal-analysis.git)
+Outputs in `results/verified_phu_identification/`:
 
-cd ontario-health-causal-analysis
+- `verified_identification_diagnostics.json` — actual dataset counts, date cutoff, treatment-label distribution, pretrend and placebo estimates with clustered uncertainty, file SHA-256, and source/causal caveats.
+- `original_phu_weekly_incidence_and_treatment_labels.csv` — all original checked-in rows and labels, not generated cases.
+- `checked_in_original_phu_group_weekly_means.csv` — observed PHU group means for all 140 weeks, including the directly calculated difference.
+- `observed_original_phu_incidence_by_group.png` — original-file group time series and a clearly marked assumed policy cutoff.
 
+Existing scripts and the prior GitHub Pages report are preserved for reproducibility, but **their historical treatment-effect headings, matched effect comparisons, and language suggesting policy success are not validated causal findings**. Code execution is not a substitute for identifying a valid control group.
 
+## What's needed to complete genuine policy-impact research
 
-\# 2. Install Python dependencies
+First obtain and reconcile the official public health unit records with archived Ontario source files, including original incidence definitions, population denominators, and changes to geography/reporting practices. Next identify and cite a specific dated policy with **documented variation in treatment exposure**, a credible comparable control group, a time-aware design, and policy anticipation/overlap checks. Then run pre-period placebo tests and modern inference with few treated clusters, multiple comparisons, other concurrent interventions and sensitivity analyses.
 
-pip install -r requirements.txt
-
-
-
-\# 3. Install R dependencies (run in terminal)
-
-Rscript -e 'install.packages(c("CausalImpact", "jsonlite", "zoo"), repos="\[https://cloud.r-project.org](https://cloud.r-project.org)")'
-
+**Verified today:** an actual checked-in panel → complete PHU-week validation → independently calculated observed-group statistics and exploratory pre-policy falsification checks. **Not verified:** that the checked-in panel reproduces the official government source, the causal treatment assignment, or that any Ontario policy reduced COVID incidence.
