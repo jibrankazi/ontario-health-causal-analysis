@@ -62,7 +62,7 @@ def main():
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Ontario Health Causal Analysis — Policy Evaluation Report</title>
+  <title>Ontario PHU exploratory associations — not a verified causal policy effect</title>
   <style>
     body{{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:40px auto;max-width:800px;line-height:1.6;color:#333}}
    .card{{border:1px solid #e0e0e0;border-radius:12px;padding:24px;margin:32px 0}}
@@ -85,23 +85,23 @@ def main():
 <body>
 
 <div class="header">
-  <h1>Ontario Health Causal Analysis — Policy Evaluation Report</h1>
+  <h1>Ontario PHU incidence: exploratory historical associations</h1>
   <p>Jibran Kazi · <a href="mailto:jibrankazi@gmail.com">jibrankazi@gmail.com</a></p>
-  <p>This report summarizes causal effect estimates using DiD, PSM, and (optionally) BSTS.</p>
+  <p><strong>Unverified causal identification:</strong> the checked-in panel has not been reconciled to independent Ontario publisher rows; 5 PHUs are labeled treated, 29 comparison, without independently documented differential exposure to the presumed province-wide policy. The estimates below are statistical associations, not established policy effects.</p>
   <p style="font-size:0.9em;margin-top:8px;">Contents: Abstract · Methods · Results · Discussion · Reproducibility</p>
 </div>
 
 <div class="card" id="abstract">
   <h2>Abstract</h2>
-  <p>We estimate the policy’s Average Treatment Effect on the Treated (ATT) with multiple designs. In the current run, DiD suggests a reduction in incidence (ATT ≈ {fmt(did_att)}, {fmt_se(did_se)}; not statistically significant at 5%), and PSM suggests a reduction (ATT ≈ {fmt(psm_att)}). BSTS was not computed in this environment. These preliminary findings point toward a reduction but with uncertainty; we recommend enabling BSTS and/or SDID for triangulation.</p>
+  <p>For the checked-in historical PHU panel, the fitted DiD association is {fmt(did_att)} ({fmt_se(did_se)}) and a matching-based association is {fmt(psm_att)}. The clustered 95% DiD interval includes zero; the 5 treated-PHU labels and comparator assignment have not been source-validated. These values do not establish a COVID-19 policy treatment effect. BSTS is not independently validated in this report.</p>
 </div>
 
 <div class="card" id="methods">
   <h2>Methods</h2>
   <ul>
-    <li><b>Difference-in-Differences (DiD):</b> Two-way fixed effects; region-clustered SEs.</li>
-    <li><b>PSM:</b> Nearest-neighbor matching on pre-period covariates; balance checked.</li>
-    <li><b>BSTS (optional):</b> Synthetic counterfactual via Bayesian structural time series.</li>
+    <li><b>Difference-in-Differences association:</b> Two-way fixed effects with PHU-clustered SEs; the required differential treatment and parallel trends assumptions are not established.</li>
+    <li><b>Historical PSM calculation:</b> An exploratory association using rows with repeated PHUs, not validated independent unit-level treatment matching or a reliable causal robustness check.</li>
+    <li><b>BSTS:</b> Optional legacy research code, not source-verified or independently validated as a counterfactual.</li>
   </ul>
 </div>
 
@@ -110,17 +110,17 @@ def main():
   <table class="table">
     <tr><th>Method</th><th>ATT</th><th>Uncertainty</th><th>Status</th></tr>
     <tr><td>DiD</td><td>{fmt(did_att)}</td><td>{fmt_se(did_se)}</td><td>Not statistically significant at 5%</td></tr>
-    <tr><td>PSM</td><td>{fmt(psm_att)}</td><td>—</td><td>Computed</td></tr>
+    <tr><td>PSM</td><td>{fmt(psm_att)}</td><td>Not verified</td><td>Exploratory only</td></tr>
     <tr><td>BSTS</td><td>{fmt(bsts_att)}</td><td>—</td><td>{fmt(bsts_att)}</td></tr>
   </table>
   {('<img alt="att_summary" src="data:image/png;base64,' + b64(FIG) + '">') if FIG.exists() else '<p><b>No figure found.</b></p>'}
-  <p>Figure. ATT comparison across methods (BSTS omitted if unavailable).</p>
+  <p>Historical regression/matching associations (NOT validated average treatment effects; BSTS omitted if unavailable).</p>
   <p style="font-size:0.9em;color:#555;margin-top:16px;">Dataset: 34 regions; 4,760 rows in this run. See JSON for details.</p>
 </div>
 
 <div class="card" id="discussion">
   <h2>Discussion</h2>
-  <p>DiD and PSM both point to a reduction but with different magnitudes and with DiD imprecise. We recommend enabling BSTS (or SDiD) to test sensitivity to alternative counterfactual construction, and exploring heterogeneity (e.g., Causal Forests) to identify segments where the effect is strongest or weakest.</p>
+  <p>Neither the direction nor the size of a policy effect can be inferred from these associations. The source mapping, population denominators, actual treatment assignment, contemporaneous intervention overlap, and independently sourced outcome data must be established first. Exploratory pre-policy placebo checks are available from scripts/real_phu_identification_audit.py. No credible policy counterfactual is currently identified.</p>
 </div>
 
 <div class="card" id="reproducibility">
