@@ -33,6 +33,7 @@ jobs:
           import hashlib,json,math
           from pathlib import Path
           import pandas as pd
+          import numpy as np
           root=Path("results/verified_phu_identification")
           results=json.loads((root/"verified_identification_diagnostics.json").read_text())
           original=Path("data/ontario_cases.csv")
@@ -54,7 +55,9 @@ jobs:
               "treated_minus_comparison_mean"}
           assert saved.week.eq(source.sort_values(["week","region"]).week.to_numpy()).all()
           assert saved.region.eq(source.sort_values(["week","region"]).region.to_numpy()).all()
-          assert saved.incidence.eq(source.sort_values(["week","region"]).incidence.to_numpy()).all()
+          assert np.allclose(saved.incidence.to_numpy(),
+              source.sort_values(["week","region"]).incidence.to_numpy(),
+              rtol=1e-12,atol=1e-9)  # saved CSV roundtrip preserves numeric values within double precision
           source["week"]=pd.to_datetime(source.week)
           ref=source.groupby(["week","treated"]).incidence.mean().unstack()
           assert len(ref)==140
