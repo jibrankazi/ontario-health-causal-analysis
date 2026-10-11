@@ -1,0 +1,97 @@
+name: Original Ontario PHU panel diagnostics — source-limited pretrends and placebo
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/real_phu_identification_audit.py"
+      - "tests/test_real_phu_identification_audit.py"
+      - ".github/workflows/real-phu-identification.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  independent-health-policy-identification-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install real checked-in panel stats and regression dependencies
+        run: python -m pip install "numpy<3" pandas statsmodels matplotlib pytest
+      - name: Independently test actual data contract, gap refusal, placebo and clustered regression
+        run: python -m pytest -q tests/test_real_phu_identification_audit.py tests/test_data_contract.py
+      - name: Run original PHU data, pre-intervention parallel trend and placebo audit
+        run: python -u scripts/real_phu_identification_audit.py
+      - name: Independently recompute actual 4760 PHU-week values and reject false causal conclusions
+        run: |
+          python - <<'PY'
+          import hashlib,json,math
+          from pathlib import Path
+          import pandas as pd
+          root=Path("results/verified_phu_identification")
+          results=json.loads((root/"verified_identification_diagnostics.json").read_text())
+          original=Path("data/ontario_cases.csv")
+          saved=pd.read_csv(root/"original_phu_weekly_incidence_and_treatment_labels.csv",dtype={"region":str})
+          weekly=pd.read_csv(root/"checked_in_original_phu_group_weekly_means.csv")
+          source=pd.read_csv(original,dtype={"region":str})
+          panel=results["panel"]
+          assert hashlib.sha256(original.read_bytes()).hexdigest()==results["original_checked_in_file_bytes_sha256"]
+          assert len(saved)==len(source)==panel["checked_in_original_panel_rows"]==4760
+          assert panel["distinct_original_phu_codes"]==source.region.nunique()==34
+          assert panel["weekly_observation_dates"]==source.week.nunique()==140
+          assert panel["complete_balanced_phu_week_grid"] is True
+          assert source[["region","week"]].duplicated().sum()==0
+          assert source.groupby("region").treated.nunique().eq(1).all()
+          assert set(source.treated)=={0,1}
+          assert len(weekly)==140
+          assert set(weekly.columns)=={
+              "week","comparison_phu_mean","labeled_treated_phu_mean",
+              "treated_minus_comparison_mean"}
+          assert saved.week.eq(source.sort_values(["week","region"]).week.to_numpy()).all()
+          assert saved.region.eq(source.sort_values(["week","region"]).region.to_numpy()).all()
+          assert saved.incidence.eq(source.sort_values(["week","region"]).incidence.to_numpy()).all()
+          source["week"]=pd.to_datetime(source.week)
+          ref=source.groupby(["week","treated"]).incidence.mean().unstack()
+          assert len(ref)==140
+          for _,row in weekly.iterrows():
+              date=pd.Timestamp(row.week)
+              assert math.isclose(row.comparison_phu_mean,float(ref.loc[date,0]),rel_tol=1e-12,abs_tol=1e-8)
+              assert math.isclose(row.labeled_treated_phu_mean,float(ref.loc[date,1]),rel_tol=1e-12,abs_tol=1e-8)
+              assert math.isclose(row.treated_minus_comparison_mean,
+                                  row.labeled_treated_phu_mean-row.comparison_phu_mean,
+                                  rel_tol=1e-12,abs_tol=1e-8)
+          date=pd.Timestamp(results["cutoff_under_investigation"])
+          pre=weekly.loc[pd.to_datetime(weekly.week)<date,"treated_minus_comparison_mean"]
+          post=weekly.loc[pd.to_datetime(weekly.week)>=date,"treated_minus_comparison_mean"]
+          assert math.isclose(pre.mean(),results["pre_policy_observed_group_mean_difference"],rel_tol=1e-12)
+          assert math.isclose(post.mean(),results["post_policy_observed_group_mean_difference"],rel_tol=1e-12)
+          assert math.isclose(post.mean()-pre.mean(),
+                    results["unadjusted_change_in_observed_group_difference"],rel_tol=1e-12)
+          for key in ["pre_policy_linear_treated_minus_comparison_trend_per_week",
+                      "pre_policy_placebo_treated_group_difference_in_differences"]:
+              metric=results[key]
+              att=metric["estimate"]
+              se=metric["phu_cluster_robust_standard_error"]
+              assert math.isfinite(att) and math.isfinite(se) and se>0
+              ci=metric["approximate_normal_95pct_interval"]
+              assert math.isclose(ci[0],att-1.96*se,rel_tol=1e-11,abs_tol=1e-9)
+              assert math.isclose(ci[1],att+1.96*se,rel_tol=1e-11,abs_tol=1e-9)
+              assert metric["interval_contains_zero"] == (ci[0] <=0<=ci[1])
+              assert metric["not_a_causal_effect"] is True
+          assert results["independent_ontario_publisher_crosscheck"] is False
+          assert not panel["publisher_record_level_provenance_independently_verified"]
+          assert not panel["original_documented_treatment_assignment_mechanism_available"]
+          assert not panel["original_policy_applies_only_to_treated_group_independently_verified"]
+          assert (root/"observed_original_phu_incidence_by_group.png").read_bytes()[:8]==bytes.fromhex("89504e470d0a1a0a")
+          print("PASS: 4760 checked-in observed-like PHU cases, 34 units and 140 original weeks; independent group means and confidence intervals; pretrend + pre-cutoff placebo source identifiers and explicit no-causality boundary")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: actual-ontario-checked-in-phu-pretrend-placebo-and-causal-identification-audit
+          path: results/verified_phu_identification/
+          if-no-files-found: error
