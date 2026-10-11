@@ -21,7 +21,8 @@ def make_software_fixture():
             records.append({
                 "week":week, "region":str(2200+r), "incidence":
                     float(20 + 2*r + .25*n + treated*.18*n +
-                          (treated*4 if n >= 35 else 0)),
+                          (treated*4 if n >= 35 else 0) +
+                          .19 * (((7*r+3*n) % 11) - 5)),
                 "treated":treated,
             })
     return pd.DataFrame(records)
