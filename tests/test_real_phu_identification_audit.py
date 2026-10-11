@@ -12,7 +12,7 @@ from scripts.real_phu_identification_audit import (
 
 
 def make_software_fixture():
-    dates=pd.date_range("2020-03-30",periods=50,freq="W-MON")
+    dates=pd.date_range("2020-03-30",periods=65,freq="W-MON")
     records=[]
     for r in range(24):
         treated=int(r < 12)
