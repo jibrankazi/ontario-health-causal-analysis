@@ -31,13 +31,15 @@ jobs:
           import json
           from pathlib import Path
           report=json.loads(Path("results/official_reopening_daily_descriptive.json").read_text())
-          assert report["measured_official_phu_day_rows"]==442
+          assert report["measured_official_phu_day_rows"]==34*report["complete_source_observation_dates_used"]
+          assert len(report["complete_pre_dates_used"])>=3
+          assert len(report["complete_post_dates_used"])>=3
           assert report["documented_policy_dates"]==["2021-02-10","2021-02-16"]
           assert report["causal_reopening_effect_verified"] is False
           assert report["no_unobserved_values_imputed"] is True
           assert report["not_a_difference_in_differences_causal_estimate"] is True
           assert report["old_treated_flags_identify_early_regions"] is False
-          print("PASS: 442 actual observed PHU-day stocks and a genuinely documented policy timeline, with no unsupported effect claim.")
+          print("PASS:",report["measured_official_phu_day_rows"],"observed PHU-day stocks on", report["complete_source_observation_dates_used"], "fully-covered days; excluded days:",report["unavailable_or_partially_covered_dates_excluded"])
           PY
       - uses: actions/upload-artifact@v4
         with:

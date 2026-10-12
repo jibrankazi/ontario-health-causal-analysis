@@ -27,9 +27,18 @@ def test_real_policy_cohort_window_math_without_causal_claim():
     assert result["not_a_difference_in_differences_causal_estimate"]
     assert result["early_minus_later_difference_in_within_phu_changes"] == pytest.approx(26)
 
-def test_source_missing_day_cannot_be_imputed():
+def test_partially_recorded_day_is_excluded_without_imputation():
     original = frame().iloc[1:]
-    with pytest.raises(ValueError, match="incomplete"):
+    result = descriptive_comparison(original, EARLY, LATER, SHUTDOWN)
+    assert result["measured_official_phu_day_rows"] == 34*12
+    assert result["unavailable_or_partially_covered_dates_excluded"] == ["2021-02-03"]
+    assert result["no_unobserved_values_imputed"]
+
+def test_insufficient_days_refused():
+    original = frame()
+    original = original.loc[original.FILE_DATE.between("2021-02-03", "2021-02-05")
+                            | original.FILE_DATE.between("2021-02-10", "2021-02-11")]
+    with pytest.raises(ValueError, match="Insufficient complete"):
         descriptive_comparison(original, EARLY, LATER, SHUTDOWN)
 
 def test_bad_cohort_and_duplicate_and_negative_snapshot_refused():

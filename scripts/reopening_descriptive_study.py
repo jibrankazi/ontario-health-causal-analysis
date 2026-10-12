@@ -37,10 +37,19 @@ def descriptive_comparison(official, early, later, shutdown):
         raise ValueError("Official active-case stock must be finite nonnegative")
     if df[["code", "date"]].duplicated().any():
         raise ValueError("Duplicate official PHU-day observations")
-    expected = pd.MultiIndex.from_product([sorted(codes), sorted(DAYS)], names=["code", "date"])
-    actual = pd.MultiIndex.from_frame(df[["code", "date"]])
-    if len(df) != len(expected) or not actual.is_unique or len(expected.difference(actual)):
-        raise ValueError("Official PHU daily snapshot window is incomplete; no interpolation")
+    # Official data can omit entire dates or report only some PHUs. Only
+    # dates with ALL 34 recorded codes are retained. Never fill gaps or
+    # silently compare different calendar days between cohorts.
+    coverage = df.groupby("date").code.nunique()
+    retained_dates = set(coverage.index[coverage.eq(34)])
+    missing_days = sorted(DAYS - retained_dates)
+    observed_pre = sorted(retained_dates & set(PRE))
+    observed_post = sorted(retained_dates & set(POST))
+    if len(observed_pre) < 3 or len(observed_post) < 3:
+        raise ValueError("Insufficient complete government PHU daily dates for comparison")
+    df = df.loc[df.date.isin(retained_dates)].copy()
+    if len(df) != 34 * len(retained_dates):
+        raise ValueError("Unexpected PHU/date coverage after complete-date filtering")
     df["cohort"] = np.select([
         df.code.isin(early), df.code.isin(later), df.code.isin(shutdown)
     ], ["Feb10 early", "Feb16 later", "Shutdown past Feb16"], default="ERROR")
@@ -69,6 +78,10 @@ def descriptive_comparison(official, early, later, shutdown):
                    - cohort["Feb16 later"]["equal_phu_weighted_mean_within_unit_stock_change"])
     return {
         "measured_official_phu_day_rows": int(len(df)),
+        "complete_source_observation_dates_used": len(retained_dates),
+        "complete_pre_dates_used": [x.date().isoformat() for x in observed_pre],
+        "complete_post_dates_used": [x.date().isoformat() for x in observed_post],
+        "unavailable_or_partially_covered_dates_excluded": [x.date().isoformat() for x in missing_days],
         "unique_government_phu_ids": 34,
         "pre_days": [x.date().isoformat() for x in PRE],
         "post_days": [x.date().isoformat() for x in POST],
