@@ -91,3 +91,39 @@ These results verify official PHU identifiers and a documented policy timeline,
 or a causal effect. The first-to-next reopening window lasts only six days
 and the source panel is weekly; reopening was selected based on existing local
 health trends.
+
+
+## New directly observed Government of Ontario February reopening comparison — October 12, 2026
+
+The [new successful daily PHU source workflow](https://github.com/jibrankazi/ontario-health-causal-analysis/actions/runs/38301804304)
+independently downloaded the official provincial active-case status resource,
+used the documented Feb 10/Feb 16 reopening exposure cohorts (3 / 27 / 4 PHUs),
+and performed a **noncausal comparison on 408 actual PHU-date records across 34
+units and 12 completely reported calendar dates**. February 11, 2021 was
+incomplete in the government source and was **excluded**, without filling data.
+Seven pre days (Feb 3–9) and five available subsequent days (Feb 10 and 12–15)
+were used, so the published 'post' label denotes the intended Feb 10–15 range,
+not six observed days.
+
+The equal-PHU-weighted mean within-unit change in **daily active-case stocks**
+was **+5.68** for the three Feb 10 early-reopening PHUs, **−48.07** for the
+27 Feb 16 reopening PHUs, and **−414.69** for the four regions remaining shut
+as documented on Feb 12. The raw early-minus-later descriptive difference of
+changes was **+53.74 active cases per PHU**. These are *not incident cases*,
+per-capita rates, statistically identified effects or evidence that reopening
+caused cases to rise or fall. The original treatment labels, denominators,
+nonrandom rollout and confounding problems remain unresolved.
+
+To rerun the study from the current public Ontario source:
+
+```bash
+python -m pip install "numpy<3" pandas requests pytest
+python -m pytest -q tests/test_reopening_descriptive_study.py
+python -m scripts.reopening_descriptive_study
+```
+
+Evidence JSON: `results/official_reopening_daily_descriptive.json` in the
+successful workflow artifact (publisher URL/hash, all used/omitted dates,
+measured cohort means, and explicit no-causality flags). This supersedes any
+suggestion that the original artificial February 1 treatment indicator was a
+credible identified policy intervention.
