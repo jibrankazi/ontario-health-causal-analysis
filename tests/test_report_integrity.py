@@ -40,7 +40,7 @@ def test_actual_automated_report_contains_image_and_source_caveat():
     assert raw["bsts"]["att"] is None or isinstance(raw["bsts"]["att"], (int, float))
     page = (root / "reports/report.html").read_text(encoding="utf-8")
     assert "data:image/png;base64," in page, "Figure was never generated or embedded"
-    assert "not established" in page.lower() or "not validated" in page.lower()
+    assert "no verified causal policy effect is established" in page.lower() or "not validated" in page.lower()
     assert "not been reconciled" in page.lower()
     assert "−245.82" not in page, "Stale unverified old report result"
 
