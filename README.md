@@ -67,3 +67,27 @@ python -m pytest -q tests/test_report_integrity.py tests/test_data_contract.py
 This does **not** resolve underlying Government of Ontario source provenance, treatment identification, or real causal validity.
 
 The [October 12, 2026 CI run](https://github.com/jibrankazi/ontario-health-causal-analysis/actions/runs/38277066166) recomputed the actual checked-in data with DiD coefficient `-108.61279573755044`, PHU-cluster SE `105.79618064337897`, and exploratory PSM association `-101.98354245580813`. These replace the previous committed PSM output `-119.85365259740263` in the archived `results/results.json` and static preview, because the previous matching result was not reproduced in that run. The environment's unpinned dependencies and the lack of an independently sourced intervention/control design preclude interpreting PSM differences as clinical or causal findings.
+
+
+## Independently verified publisher identities and February 2021 rollout — October 2026
+
+The official [Government of Ontario PHU status source](https://data.ontario.ca/dataset/status-of-covid-19-cases-in-ontario-by-public-health-unit-phu)
+was downloaded by [GitHub Actions](https://github.com/jibrankazi/ontario-health-causal-analysis/actions/runs/38280612787).
+There were **33,081 official PHU snapshot observations** with valid PHU codes,
+one excluded row without a usable PHU identifier, **34/34 matching PHU
+codes**, and **139 common Monday dates** against the checked-in weekly panel.
+
+Crosschecking official province announcements for [February 10](https://news.ontario.ca/en/release/60261/ontario-extending-stay-at-home-order-across-most-of-the-province-to-save-lives)
+and [February 16](https://news.ontario.ca/en/release/60339/ontario-returning-27-public-health-regions-to-strengthened-covid-19-response-framework)
+identified **3 early reopening PHUs**, **27 further reopening regions**, and
+**4 remaining shutdown regions**. Official early PHU codes were
+**2238, 2241 and 2257**. **None of those three were in the original five
+PHUs arbitrarily labeled treated**, and the old February 1 cutoff does not
+represent the documented first reopening.
+
+See [full source reconciliation and exposure limitations](OFFICIAL_SOURCE_RECONCILIATION.md).
+These results verify official PHU identifiers and a documented policy timeline,
+**not** the checked-in weekly incidence derivation, treatment comparability,
+or a causal effect. The first-to-next reopening window lasts only six days
+and the source panel is weekly; reopening was selected based on existing local
+health trends.
