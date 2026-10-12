@@ -1,0 +1,46 @@
+name: Government PHU daily reopening descriptive study
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/reopening_descriptive_study.py"
+      - "tests/test_reopening_descriptive_study.py"
+      - ".github/workflows/daily-reopening-study.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  observed-government-phu-snapshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install "numpy<3" pandas requests pytest
+      - run: python -m pytest -q tests/test_reopening_descriptive_study.py tests/test_official_phu_crosscheck.py
+      - name: Retrieve original Ontario PHU active-case snapshots and calculate noncausal policy-window descriptive comparison
+        run: python -m scripts.reopening_descriptive_study
+      - name: Verify actual publisher rows and reject causal interpretation
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("results/official_reopening_daily_descriptive.json").read_text())
+          assert report["measured_official_phu_day_rows"]==442
+          assert report["documented_policy_dates"]==["2021-02-10","2021-02-16"]
+          assert report["causal_reopening_effect_verified"] is False
+          assert report["no_unobserved_values_imputed"] is True
+          assert report["not_a_difference_in_differences_causal_estimate"] is True
+          assert report["old_treated_flags_identify_early_regions"] is False
+          print("PASS: 442 actual observed PHU-day stocks and a genuinely documented policy timeline, with no unsupported effect claim.")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: real-ontario-phu-february-2021-daily-noncausal-reopening-descriptive
+          path: results/official_reopening_daily_descriptive.json
+          if-no-files-found: error
