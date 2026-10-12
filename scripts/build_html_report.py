@@ -108,13 +108,13 @@ def main():
 <div class="card" id="results">
   <h2>Results</h2>
   <table class="table">
-    <tr><th>Method</th><th>ATT</th><th>Uncertainty</th><th>Status</th></tr>
+    <tr><th>Method</th><th>Exploratory association</th><th>Uncertainty</th><th>Status</th></tr>
     <tr><td>DiD</td><td>{fmt(did_att)}</td><td>{fmt_se(did_se)}</td><td>Not statistically significant at 5%</td></tr>
     <tr><td>PSM</td><td>{fmt(psm_att)}</td><td>Not verified</td><td>Exploratory only</td></tr>
     <tr><td>BSTS</td><td>{fmt(bsts_att)}</td><td>—</td><td>{fmt(bsts_att)}</td></tr>
   </table>
-  {('<img alt="att_summary" src="data:image/png;base64,' + b64(FIG) + '">') if FIG.exists() else '<p><b>No figure found.</b></p>'}
-  <p>Historical regression/matching associations (NOT validated average treatment effects; BSTS omitted if unavailable).</p>
+  {('<img alt="Exploratory PHU associations, not a causal effect" src="data:image/png;base64,' + b64(FIG) + '">') if FIG.exists() else '<p><b>No figure found.</b></p>'}
+  <p>Historical regression/matching associations (NOT validated average treatment effects; BSTS omitted if unavailable). Units in the checked-in incidence field are not independently verified.</p>
   <p style="font-size:0.9em;color:#555;margin-top:16px;">Dataset: 34 regions; 4,760 rows in this run. See JSON for details.</p>
 </div>
 

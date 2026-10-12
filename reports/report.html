@@ -1,81 +1,18 @@
 <!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Ontario Health Causal Analysis — Policy Evaluation Report</title>
-  <style>
-    body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;margin:40px auto;max-width:800px;line-height:1.6;color:#333}
-   .card{border:1px solid #e0e0e0;border-radius:12px;padding:24px;margin:32px 0}
-   .table{border-collapse:collapse;width:100%;margin-top:16px}
-   .table td,.table th{border-bottom:1px solid #e0e0e0;padding:10px 8px;text-align:left}
-   .table th{width:120px;font-weight:600}
-    img{max-width:100%;height:auto;border:1px solid #e0e0e0;border-radius:8px;margin-top:10px}
-   .badge{background:#f5f5f5;border-radius:999px;padding:4px 10px;font-size:12px;color:#333}
-    h1{margin-bottom:8px;font-weight:600}
-    h2{margin-top:0;font-weight:600}
-    p{margin-bottom:0}
-    ul{padding-left:20px;margin-top:10px}
-    li{margin-bottom:8px}
-    code{background:#f5f5f5;padding:3px 6px;border-radius:4px;font-family:monospace;font-size:0.95em}
-   .header p{color:#555}
-   .footer{font-size:12px;color:#777;text-align:center;margin-top:24px}
-    a{color:#007bff;text-decoration:none}
-  </style>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ontario PHU exploratory historical associations — not validated causal policy effects</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;max-width:850px;margin:35px auto;padding:0 20px;color:#242424}td,th{text-align:left;padding:10px;border-bottom:1px solid #ddd}table{border-collapse:collapse;width:100%}.notice{padding:12px 18px;border-left:4px solid #555;background:#f5f5f5}</style>
 </head>
 <body>
-
-<div class="header">
-  <h1>Ontario Health Causal Analysis — Policy Evaluation Report</h1>
-  <p>Jibran Kazi · <a href="mailto:jibrankazi@gmail.com">jibrankazi@gmail.com</a></p>
-  <p>This report summarizes causal effect estimates using DiD, PSM, and (optionally) BSTS.</p>
-  <p style="font-size:0.9em;margin-top:8px;">Contents: Abstract · Methods · Results · Discussion · Reproducibility</p>
-</div>
-
-<div class="card" id="abstract">
-  <h2>Abstract</h2>
-  <p>We estimate the policy’s Average Treatment Effect on the Treated (ATT) with multiple designs. In the current run, DiD suggests a reduction in incidence (ATT ≈ -108.61, SE ≈ 105.80; not statistically significant at 5%), and PSM suggests a reduction (ATT ≈ -119.85). BSTS was not computed in this environment. These preliminary findings point toward a reduction but with uncertainty; we recommend enabling BSTS and/or SDID for triangulation.</p>
-</div>
-
-<div class="card" id="methods">
-  <h2>Methods</h2>
-  <ul>
-    <li><b>Difference-in-Differences (DiD):</b> Two-way fixed effects; region-clustered SEs.</li>
-    <li><b>PSM:</b> Nearest-neighbor matching on pre-period covariates; balance checked.</li>
-    <li><b>BSTS (optional):</b> Synthetic counterfactual via Bayesian structural time series.</li>
-  </ul>
-</div>
-
-<div class="card" id="results">
-  <h2>Results</h2>
-  <table class="table">
-    <tr><th>Method</th><th>ATT</th><th>Uncertainty</th><th>Status</th></tr>
-    <tr><td>DiD</td><td>-108.61</td><td>SE ≈ 105.80</td><td>Not statistically significant at 5%</td></tr>
-    <tr><td>PSM</td><td>-119.85</td><td>—</td><td>Computed</td></tr>
-    <tr><td>BSTS</td><td>Not available in this run</td><td>—</td><td>Not available in this run</td></tr>
-  </table>
-  <p><b>No figure found.</b></p>
-  <p>Figure. ATT comparison across methods (BSTS omitted if unavailable).</p>
-  <p style="font-size:0.9em;color:#555;margin-top:16px;">Dataset: 34 regions; 4,760 rows in this run. See JSON for details.</p>
-</div>
-
-<div class="card" id="discussion">
-  <h2>Discussion</h2>
-  <p>DiD and PSM both point to a reduction but with different magnitudes and with DiD imprecise. We recommend enabling BSTS (or SDiD) to test sensitivity to alternative counterfactual construction, and exploring heterogeneity (e.g., Causal Forests) to identify segments where the effect is strongest or weakest.</p>
-</div>
-
-<div class="card" id="reproducibility">
-  <h2>Reproducibility</h2>
-  <ul>
-    <li><code>Config: config.yaml (policy_date, covariates, output paths)</code></li>
-    <li><code>Results (JSON): results/results.json</code></li>
-    <li><code>Figure: figures/att_summary.png</code></li>
-    <li><code>Pipeline: scripts/clean_all.py → src/run_analysis.py → scripts/regenerate_figures.py → scripts/build_html_report.py</code></li>
-  </ul>
-</div>
-
-<p class="footer">
-  &copy; Jibran Kazi · This page is auto-published via GitHub Pages after each push to main.
-</p>
-
-</body>
-</html>
+<h1>Ontario PHU historical incidence — exploratory association report</h1>
+<p>Jibran Kazi. This committed HTML is a historical preview. The GitHub Actions deployment regenerates an up-to-date report from <code>results/results.json</code>.</p>
+<div class="notice"><strong>No causal policy effect is established.</strong> The original PHU-level source rows have not been independently reconciled to Government of Ontario publisher records, the five treated/29 comparison group assignments have no verified differential policy exposure, and the incidence definition is unverified.</div>
+<p>Checked-in historical dataset: 4,760 PHU-week entries, 34 public health units, 140 weeks from 2020-03-30 to 2022-11-28.</p>
+<table><tr><th>Source-limited calculation</th><th>Checked-in result</th><th>Interpretation</th></tr>
+<tr><td>Legacy DiD regression association</td><td>−108.61; cluster SE 105.80</td><td>Approximate 95% interval [−315.97,+98.75]; zero included. Not a verified ATT</td></tr>
+<tr><td>Legacy matched-row association</td><td>−119.85</td><td>No independently validated causal matching design or uncertainty</td></tr>
+<tr><td>BSTS</td><td>Unavailable</td><td>Not independently verified</td></tr></table>
+<p>Pre-policy trend divergence and the before-policy placebo tests further limit causal interpretations. Run
+<a href="https://github.com/jibrankazi/ontario-health-causal-analysis/actions/workflows/real-phu-identification.yml">the checked-in PHU identification diagnostics</a> and read the <a href="https://github.com/jibrankazi/ontario-health-causal-analysis/blob/main/README.md">documented limitations</a>.</p>
+</body></html>

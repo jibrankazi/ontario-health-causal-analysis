@@ -24,7 +24,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pandas numpy statsmodels scikit-learn pyyaml matplotlib
+          pip install pandas numpy statsmodels scikit-learn pyyaml matplotlib pytest
 
       - name: Run analysis
         run: |
@@ -32,6 +32,9 @@ jobs:
           python src/run_analysis.py
           python scripts/regenerate_figures.py
           python scripts/build_html_report.py
+
+      - name: Guard generated public claims and verify actual PNG is embedded
+        run: python -m pytest -q tests/test_report_integrity.py tests/test_data_contract.py
 
       - name: Validate results
         run: |

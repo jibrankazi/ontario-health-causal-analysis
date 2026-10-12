@@ -50,3 +50,18 @@ Existing scripts and the prior GitHub Pages report are preserved for reproducibi
 First obtain and reconcile the official public health unit records with archived Ontario source files, including original incidence definitions, population denominators, and changes to geography/reporting practices. Next identify and cite a specific dated policy with **documented variation in treatment exposure**, a credible comparable control group, a time-aware design, and policy anticipation/overlap checks. Then run pre-period placebo tests and modern inference with few treated clusters, multiple comparisons, other concurrent interventions and sensitivity analyses.
 
 **Verified today:** an actual checked-in panel → complete PHU-week validation → independently calculated observed-group statistics and exploratory pre-policy falsification checks. **Not verified:** that the checked-in panel reproduces the official government source, the causal treatment assignment, or that any Ontario policy reduced COVID incidence.
+
+## Public report generation integrity (October 2026)
+
+The previous `scripts/regenerate_figures.py` file only declared `main()` and never executed it when called from CI. It also lacked required imports and incorrectly substituted zero for unavailable BSTS output. It now runs as a real CLI script, refuses non-finite estimates, omits absent methods rather than fabricating zero-valued bars, explicitly marks historical associations as noncausal, and produces `figures/att_summary.png`. CI tests the actual PNG and requires that the generated public HTML report embeds it. The old committed `docs/index.html`, `docs/analysis.html`, and `reports/report.html` contained stale values or misleading causal-language; these are replaced with source-limited previews.
+
+```bash
+python -m pip install -r requirements.txt
+python -m pip install pytest
+python src/run_analysis.py
+python scripts/regenerate_figures.py
+python scripts/build_html_report.py
+python -m pytest -q tests/test_report_integrity.py tests/test_data_contract.py
+```
+
+This does **not** resolve underlying Government of Ontario source provenance, treatment identification, or real causal validity.

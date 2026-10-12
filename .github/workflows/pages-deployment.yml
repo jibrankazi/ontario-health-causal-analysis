@@ -62,6 +62,20 @@ jobs:
       - name: 4. Build HTML report
         run: python scripts/build_html_report.py
 
+      - name: Verify generated source-limited report and actual plotted figure
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          report=Path("reports/report.html").read_text()
+          fig=Path("figures/att_summary.png")
+          assert fig.is_file() and fig.stat().st_size>1000, "Missing plot"
+          assert fig.read_bytes()[:8] == bytes.fromhex("89504e470d0a1a0a")
+          assert "data:image/png;base64," in report, "Plot missing from public report"
+          assert "not been reconciled" in report
+          assert "not established" in report.lower() or "not validated" in report.lower()
+          print("PASS: generated plot is embedded and no verified causal effect is claimed")
+          PY
+
       # --- Artifact Generation ---
       - name: 5. Create.nojekyll file
         # This is CRITICAL. It tells GitHub Pages *not* to run its
