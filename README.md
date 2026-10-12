@@ -65,3 +65,5 @@ python -m pytest -q tests/test_report_integrity.py tests/test_data_contract.py
 ```
 
 This does **not** resolve underlying Government of Ontario source provenance, treatment identification, or real causal validity.
+
+The [October 12, 2026 CI run](https://github.com/jibrankazi/ontario-health-causal-analysis/actions/runs/38277066166) recomputed the actual checked-in data with DiD coefficient `-108.61279573755044`, PHU-cluster SE `105.79618064337897`, and exploratory PSM association `-101.98354245580813`. These replace the previous committed PSM output `-119.85365259740263` in the archived `results/results.json` and static preview, because the previous matching result was not reproduced in that run. The environment's unpinned dependencies and the lack of an independently sourced intervention/control design preclude interpreting PSM differences as clinical or causal findings.

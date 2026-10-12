@@ -6,12 +6,12 @@
 </head>
 <body>
 <h1>Ontario PHU historical incidence — exploratory association report</h1>
-<p>Jibran Kazi. This committed HTML is a historical preview. The GitHub Actions deployment regenerates an up-to-date report from <code>results/results.json</code>.</p>
+<p>Jibran Kazi. This committed HTML reflects the October 12, 2026 successful GitHub Actions analysis, but is still a static preview. The GitHub Actions deployment regenerates an up-to-date report from <code>results/results.json</code>.</p>
 <div class="notice"><strong>No causal policy effect is established.</strong> The original PHU-level source rows have not been independently reconciled to Government of Ontario publisher records, the five treated/29 comparison group assignments have no verified differential policy exposure, and the incidence definition is unverified.</div>
 <p>Checked-in historical dataset: 4,760 PHU-week entries, 34 public health units, 140 weeks from 2020-03-30 to 2022-11-28.</p>
 <table><tr><th>Source-limited calculation</th><th>Checked-in result</th><th>Interpretation</th></tr>
 <tr><td>Legacy DiD regression association</td><td>−108.61; cluster SE 105.80</td><td>Approximate 95% interval [−315.97,+98.75]; zero included. Not a verified ATT</td></tr>
-<tr><td>Legacy matched-row association</td><td>−119.85</td><td>No independently validated causal matching design or uncertainty</td></tr>
+<tr><td>Legacy matched-row association</td><td>−101.98</td><td>No independently validated causal matching design or uncertainty</td></tr>
 <tr><td>BSTS</td><td>Unavailable</td><td>Not independently verified</td></tr></table>
 <p>Pre-policy trend divergence and the before-policy placebo tests further limit causal interpretations. Run
 <a href="https://github.com/jibrankazi/ontario-health-causal-analysis/actions/workflows/real-phu-identification.yml">the checked-in PHU identification diagnostics</a> and read the <a href="https://github.com/jibrankazi/ontario-health-causal-analysis/blob/main/README.md">documented limitations</a>.</p>
