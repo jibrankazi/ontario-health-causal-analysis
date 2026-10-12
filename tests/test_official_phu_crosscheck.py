@@ -46,3 +46,14 @@ def test_refuse_wrong_publisher_schema_and_duplicates():
     with pytest.raises(ValueError, match="Duplicate"):
         compare_official(local, pd.concat([govt, govt.iloc[:1]]),
                          official_hash="x")
+
+
+def test_government_provincewide_rows_without_phu_id_are_excluded_not_fabricated():
+    local, govt = make_frames()
+    provincewide = govt.iloc[:1].copy()
+    provincewide["PHU_NUM"] = float("nan")
+    audited = compare_official(local, pd.concat([govt, provincewide]),
+                               official_hash="testhash")
+    assert audited["official_excluded_missing_or_invalid_phu_id_rows"] == 1
+    assert audited["same_phu_code_count"] == 30
+    assert audited["official_phu_snapshot_rows"] == len(govt)

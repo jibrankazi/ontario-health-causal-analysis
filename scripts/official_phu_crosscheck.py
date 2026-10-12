@@ -37,6 +37,12 @@ def compare_official(checked_in, official, *, official_hash):
     if not needed.issubset(govt):
         raise ValueError("Official PHU snapshot schema differs from published dictionary")
     local["code"] = phu_code(local.region)
+    # Government daily snapshots can include province totals without a PHU ID.
+    # Never invent an ID or allow those aggregate rows into the PHU join.
+    phu_numeric = pd.to_numeric(govt.PHU_NUM, errors="coerce")
+    invalid_id = phu_numeric.isna() | (phu_numeric % 1).ne(0)
+    official_excluded_rows = int(invalid_id.sum())
+    govt = govt.loc[~invalid_id].copy()
     govt["code"] = phu_code(govt.PHU_NUM)
     local["week"] = pd.to_datetime(local.week, errors="raise").dt.normalize()
     govt["FILE_DATE"] = pd.to_datetime(govt.FILE_DATE, errors="raise").dt.normalize()
@@ -55,6 +61,7 @@ def compare_official(checked_in, official, *, official_hash):
         "official_raw_csv_url": OFFICIAL,
         "official_csv_sha256": official_hash,
         "official_phu_snapshot_rows": int(len(govt)),
+        "official_excluded_missing_or_invalid_phu_id_rows": official_excluded_rows,
         "official_distinct_phu_codes": len(codes_official),
         "official_first_date": str(govt.FILE_DATE.min().date()),
         "official_last_date": str(govt.FILE_DATE.max().date()),
