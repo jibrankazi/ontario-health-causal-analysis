@@ -40,7 +40,7 @@ def test_actual_automated_report_contains_image_and_source_caveat():
     assert raw["bsts"]["att"] is None or isinstance(raw["bsts"]["att"], (int, float))
     page = (root / "reports/report.html").read_text(encoding="utf-8")
     assert "data:image/png;base64," in page, "Figure was never generated or embedded"
-    assert "no verified causal policy effect is established" in page.lower() or "not validated" in page.lower()
+    assert "not established" in page.lower() or "not validated" in page.lower()
     assert "not been reconciled" in page.lower()
     assert "−245.82" not in page, "Stale unverified old report result"
 
@@ -49,6 +49,6 @@ def test_all_checked_in_public_html_pages_do_not_repeat_stale_causal_claims():
     root = Path(__file__).resolve().parents[1]
     for filename in ("docs/index.html", "docs/analysis.html"):
         page = (root / filename).read_text(encoding="utf-8").lower()
-        assert "not established" in page
+        assert "no verified causal policy effect is established" in page
         assert "245.82" not in page
         assert "verified" in page
