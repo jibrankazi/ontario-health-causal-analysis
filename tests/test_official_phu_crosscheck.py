@@ -4,7 +4,7 @@ from hashlib import sha256
 import pandas as pd
 import pytest
 
-from scripts.official_phu_crosscheck import compare_official, phu_code
+from scripts.official_phu_crosscheck import compare_official, phu_code, documented_february_2021_rollout
 
 
 def make_frames():
@@ -15,7 +15,7 @@ def make_frames():
          "treated": int(region<2206)} for day in weeks for region in phus
     ])
     govt = pd.DataFrame([
-        {"FILE_DATE": day, "PHU_NUM": region, "ACTIVE_CASES": 2,
+        {"FILE_DATE": day, "PHU_NUM": region, "PHU_NAME": "FIXTURE PHU " + str(region), "ACTIVE_CASES": 2,
          "RESOLVED_CASES": 3, "DEATHS": 0}
         for day in weeks[2:] for region in phus
     ])
@@ -57,3 +57,29 @@ def test_government_provincewide_rows_without_phu_id_are_excluded_not_fabricated
     assert audited["official_excluded_missing_or_invalid_phu_id_rows"] == 1
     assert audited["same_phu_code_count"] == 30
     assert audited["official_phu_snapshot_rows"] == len(govt)
+
+
+def test_policy_reopening_dates_are_not_arbitrary_original_treated_flags():
+    local, official = make_frames()
+    extra_local = local.loc[local.region.eq(2201)].copy()
+    extra_official = official.loc[official.PHU_NUM.eq(2201)].copy()
+    for n in (2231, 2232, 2233, 2234):
+        new_local = extra_local.copy()
+        new_local["region"] = float(n)
+        new_local["treated"] = 0
+        local = pd.concat([local, new_local], ignore_index=True)
+        new_official = extra_official.copy()
+        new_official["PHU_NUM"] = n
+        official = pd.concat([official, new_official], ignore_index=True)
+    # Names are artificial schema fixtures, not observations about Ontario.
+    label = {2201: "Hastings Prince Edward", 2202: "Kingston Frontenac",
+             2203: "Renfrew County", 2204: "Toronto",
+             2205: "Peel", 2206: "York", 2207: "North Bay Parry Sound"}
+    official["PHU_NAME"] = official.PHU_NUM.map(
+        lambda n: label.get(n, "FICTIONAL region " + str(n)))
+    result = documented_february_2021_rollout(official, local)
+    assert len(result["early_reopening_three_phu_codes"]) == 3
+    assert len(result["feb_16_reopening_27_phu_codes"]) == 27
+    assert result["date_of_documented_early_reopening"] == "2021-02-10"
+    assert result["original_treated_labels_identify_documented_early_cohort"] is False
+    assert result["not_an_identified_causal_design"] is True

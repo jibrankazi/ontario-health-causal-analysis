@@ -82,6 +82,67 @@ def compare_official(checked_in, official, *, official_hash):
     }
 
 
+
+def documented_february_2021_rollout(official, checked_in):
+    """Manual transcription of government-documented February 10/16 PHU cohorts.
+
+    Sources:
+    Feb 8 https://news.ontario.ca/en/release/60261/ontario-extending-stay-at-home-order-across-most-of-the-province-to-save-lives
+    Feb 12 https://news.ontario.ca/en/release/60339/ontario-returning-27-public-health-regions-to-strengthened-covid-19-response-framework
+    This is exposure timing evidence, NOT an as-if-random policy assignment.
+    """
+    if "PHU_NAME" not in official.columns:
+        raise ValueError("Official PHU name required for policy rollout mapping")
+    data = official.copy()
+    nums = pd.to_numeric(data.PHU_NUM, errors="coerce")
+    data = data.loc[nums.notna() & (nums % 1).eq(0)].copy()
+    data["code"] = phu_code(data.PHU_NUM)
+    names = data.groupby("code").PHU_NAME.first().dropna()
+    if len(names) != 34:
+        raise ValueError("Need 34 named government PHUs before assigning rollout cohorts")
+    def one(term):
+        matches = names.loc[names.astype(str).str.casefold().str.contains(term, regex=False)]
+        if len(matches) != 1:
+            raise ValueError("Cannot uniquely map documented government PHU name: " + term)
+        return str(matches.index[0])
+    early = {one(s) for s in ("hastings", "kingston", "renfrew")}
+    extended = {one(s) for s in ("toronto", "peel", "york", "north bay")}
+    if len(early) != 3 or len(extended) != 4 or early & extended:
+        raise ValueError("Government-documented policy exposure cohorts ambiguous")
+    others = set(names.index) - early - extended
+    if len(others) != 27:
+        raise ValueError("Government-documented Feb 16 27-region cohort mismatch")
+    prior = checked_in[["region", "treated"]].copy()
+    prior["code"] = phu_code(prior.region)
+    prior = prior.drop_duplicates()
+    if prior.groupby("code").treated.nunique().gt(1).any():
+        raise ValueError("Existing treatment labels change by PHU")
+    labeled = set(prior.loc[prior.treated.eq(1), "code"])
+    if set(prior.code) != set(names.index):
+        raise ValueError("Publisher/panel PHU code mismatch prevents policy mapping")
+    return {
+        "date_of_documented_early_reopening": "2021-02-10",
+        "date_of_27_other_regions_reopening": "2021-02-16",
+        "early_reopening_three_phu_codes": sorted(early),
+        "feb_16_reopening_27_phu_codes": sorted(others),
+        "remaining_four_shutdown_phu_codes": sorted(extended),
+        "government_mapped_phu_code_to_name": {str(k): str(v) for k, v in names.items()},
+        "earliest_phu_treatment_control_contrast_window_days": 6,
+        "existing_panel_assumed_feb_1_policy_date_is_actual_first_reopening": False,
+        "original_panel_labeled_treated_phu_count": len(labeled),
+        "original_labeled_treated_overlaps_actual_feb_10_early_cohort": len(labeled & early),
+        "original_treated_labels_identify_documented_early_cohort": labeled == early,
+        "source_note": "Three areas reopened Feb 10, 27 Feb 16, four retained shutdown per official Feb 8/12 releases; later policy changes require a separate timeline.",
+        "documented_rollout_sources": [
+            "https://news.ontario.ca/en/release/60261/ontario-extending-stay-at-home-order-across-most-of-the-province-to-save-lives",
+            "https://news.ontario.ca/en/release/60339/ontario-returning-27-public-health-regions-to-strengthened-covid-19-response-framework"
+        ],
+        "regions_were_assigned_reopening_based_on_prior_health_trends": True,
+        "no_as_if_random_assignment_claim": True,
+        "not_an_identified_causal_design": True,
+        "needs_verified_daily_outcomes_population_denominators_and_parallel_trends": True,
+    }
+
 def run(panel_path="data/ontario_cases.csv",
         output="results/official_phu_comparison.json", session=None):
     checked = pd.read_csv(panel_path)
@@ -100,6 +161,10 @@ def run(panel_path="data/ontario_cases.csv",
         official = pd.read_csv(BytesIO(raw), low_memory=False)
         report = compare_official(checked, official,
                                   official_hash=hashlib.sha256(raw).hexdigest())
+        try:
+            report["documented_regional_reopening_feb_2021"] = documented_february_2021_rollout(official, checked)
+        except ValueError as exposure_error:
+            report["documented_reopening_mapping_error"] = str(exposure_error)
         report["official_source_retrieval_error"] = None
     except (requests.RequestException, UnicodeError, pd.errors.ParserError, ValueError) as exc:
         report["official_source_retrieval_error"] = type(exc).__name__ + ": " + str(exc)[:180]

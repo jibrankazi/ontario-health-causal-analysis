@@ -23,3 +23,24 @@ definition with population denominators, proper pre-trend and few-treated-
 cluster inference, and verified source-level provenance. A province-wide
 policy cannot turn the 29 PHUs labeled 'comparison' into untreated controls
 by assertion. The project does not establish a causal policy effect.
+
+
+## Verified February 2021 policy timing (separate from outcome validation)
+
+The [Ontario government's February 8 announcement](https://news.ontario.ca/en/release/60261/ontario-extending-stay-at-home-order-across-most-of-the-province-to-save-lives)
+records Hastings and Prince Edward, Kingston-Frontenac-Lennox & Addington,
+and Renfrew returning to the framework **February 10, 2021**.
+The [February 12 announcement](https://news.ontario.ca/en/release/60339/ontario-returning-27-public-health-regions-to-strengthened-covid-19-response-framework)
+documents 27 further PHUs transitioning **February 16**, while Toronto,
+Peel, York, and North Bay Parry Sound remained subject to shutdown.
+The source comparison now maps these seven specifically named PHUs to the
+**independently downloaded official PHU code/name records** and assigns the
+remaining 27. It compares those cohorts with the five unsupported
+`treated` flags in the checked-in source and the old February 1 cutoff.
+
+This is a verified *policy chronology*, NOT causal identification: early
+lifting was selected based on improving local health indicators. The
+early-versus-later contrast lasts only six days before other jurisdictions
+reopen, shorter than the checked-in weekly outcome cadence. A genuine
+causal study therefore needs different daily outcomes, documented covariates,
+and a justified design that addresses endogenous region selection.
