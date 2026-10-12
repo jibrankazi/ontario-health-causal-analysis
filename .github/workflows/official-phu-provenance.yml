@@ -1,0 +1,44 @@
+name: Independently download Ontario PHU publisher source and test original panel provenance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/official_phu_crosscheck.py"
+      - "tests/test_official_phu_crosscheck.py"
+      - ".github/workflows/official-phu-provenance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-official-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install pandas requests pytest
+      - run: python -m pytest -q tests/test_official_phu_crosscheck.py
+      - name: Attempt independent Ontario publisher retrieval and source-code/date overlap
+        run: python -m scripts.official_phu_crosscheck
+      - name: Explicitly refuse unsupported claims
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("results/official_phu_comparison.json").read_text())
+          assert d["checked_in_weekly_incidence_values_row_reconciled"] is False
+          assert d["causal_effect_identified"] is False
+          assert d["official_raw_csv_url"].startswith("https://data.ontario.ca/")
+          print("Independent publisher fetch:", d["official_source_is_independently_downloaded"])
+          print("Provenance and causal claims remain unverified.")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ontario-official-phu-source-identity-dates-and-honest-inference-gate
+          path: results/official_phu_comparison.json
+          if-no-files-found: error
